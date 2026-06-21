@@ -1,0 +1,35 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# .dockerignore — qué NO entra al build context de la imagen del Space.
+# Meta: imagen liviana y SIN secretos. La imagen reconstruye su propio venv con uv.
+# OJO: el matching de .dockerignore es relativo a la raíz; para anidados hace falta **/.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Entorno virtual y cachés (se reconstruyen / re-descargan dentro de la imagen).
+.venv
+.cache
+**/__pycache__
+**/*.py[cod]
+
+# Salidas generadas en runtime (audios sintetizados, etc.).
+outputs
+
+# SECRETOS: el .env NUNCA entra a la imagen (en el Space se usa un Secret de HF).
+.env
+.env.*
+
+# Git: no hace falta dentro de la imagen.
+.git
+.gitignore
+.gitattributes
+
+# Material de archivo (experimentos congelados + PDFs de terceros): no se usa en runtime.
+archive
+
+# Config local de herramientas (Claude Code), metadata del SO y backups.
+.claude
+**/.DS_Store
+*.bak
+
+# Meta de build: el Dockerfile y este archivo no se necesitan DENTRO de la imagen.
+Dockerfile
+.dockerignore
