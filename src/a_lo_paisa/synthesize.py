@@ -7,7 +7,7 @@ IA; es parte del diseño del modelo, no se quita.
 """
 
 import os
-from functools import lru_cache
+import threading
 from pathlib import Path
 
 # En Apple Silicon, algunos ops de Chatterbox no están implementados en MPS. Esta variable
@@ -30,7 +30,7 @@ T3_MODEL = "v3"  # checkpoint multilingüe V3 (solo en la versión de git, no en
 USAR_LATAM = True  # False = V3 general (23 idiomas), para comparar
 LATAM_REPO = "ResembleAI/Chatterbox-Multilingual-es-mx-latam"
 LATAM_T3_FILE = "t3_es_mx_latam.safetensors"
-LATAM_S3GEN_FILE = "s3gen_v3.pt"  # decoder V3 del pack (distinto del s3gen.pt base)
+LATAM_S3GEN_FILE = "s3gen_v3.pt"  # decoder V3 del pack
 BASE_REPO = "ResembleAI/chatterbox"
 
 # Parámetros de Chatterbox a tunear (defaults de la función de bajo nivel synthesize()):
@@ -121,23 +121,24 @@ def _preparar_ckpt_latam() -> Path:
     _enlazar(BASE_REPO, "conds.pt", "conds.pt")
     _enlazar(LATAM_REPO, LATAM_T3_FILE, LATAM_T3_FILE)
 
-    # Decoder: el s3gen_v3.pt del pack es realmente distinto del base, pero le faltan 2
-    # buffers del tokenizer (_mel_filters, window) que from_local() carga en modo estricto.
-    # Son deterministas (filtros mel + ventana STFT), así que los copiamos del s3gen.pt base
-    # y guardamos el combinado UNA vez. OJO: el archivo DEBE llamarse "s3gen.pt" (from_local
-    # lo tiene hardcodeado); el nombre es s3gen.pt pero el contenido es el decoder V3.
+    # Decoder: el s3gen_v3.pt del pack es el decoder correcto, pero le faltan 2 buffers del
+    # tokenizer (mel filterbank + ventana STFT) que from_local() exige en modo estricto. Son
+    # DSP determinista (Whisper/s3tokenizer: sr 16k, n_fft 400, 128 mels, ventana Hann), así
+    # que los CALCULAMOS —verificado idénticos a los del s3gen base con torch.allclose— en vez
+    # de bajar el s3gen base (1 GB) solo para extraerlos. Guardamos el combinado UNA vez. OJO:
+    # el archivo DEBE llamarse "s3gen.pt" (from_local lo tiene hardcodeado).
     destino_s3gen = ensamblado / "s3gen.pt"
     if destino_s3gen.is_symlink():
         destino_s3gen.unlink()  # limpia un symlink de un intento anterior
     if not destino_s3gen.exists():
-        base_s3gen = hf_hub_download(repo_id=BASE_REPO, filename="s3gen.pt", repo_type="model", token=token)
+        import librosa
+
         v3_s3gen = hf_hub_download(repo_id=LATAM_REPO, filename=LATAM_S3GEN_FILE, repo_type="model", token=token)
-        sd_base = torch.load(base_s3gen, map_location="cpu", weights_only=True)
         sd_v3 = torch.load(v3_s3gen, map_location="cpu", weights_only=True)
-        for buffer_faltante in ("tokenizer._mel_filters", "tokenizer.window"):
-            sd_v3[buffer_faltante] = sd_base[buffer_faltante]
+        sd_v3["tokenizer._mel_filters"] = torch.from_numpy(librosa.filters.mel(sr=16000, n_fft=400, n_mels=128)).float()
+        sd_v3["tokenizer.window"] = torch.hann_window(400)
         torch.save(sd_v3, destino_s3gen)
-        print(f"   s3gen.pt                               <- {LATAM_REPO}/{LATAM_S3GEN_FILE} (+2 buffers del base)")
+        print(f"   s3gen.pt                               <- {LATAM_REPO}/{LATAM_S3GEN_FILE} (+2 buffers calculados)")
     else:
         print("   s3gen.pt                               <- (combinado V3, ya cacheado)")
 
@@ -160,22 +161,33 @@ def _verificar_modelo_latam(modelo: ChatterboxMultilingualTTS) -> None:
     print(f"✅ Verificación: modelo multilingüe OK, 'es' soportado{detalle}")
 
 
-@lru_cache(maxsize=1)
+_tts_lock = threading.Lock()
+_tts_cache: dict[str, ChatterboxMultilingualTTS] = {}
+
+
 def _get_tts(device: str) -> ChatterboxMultilingualTTS:
     """Carga el modelo Chatterbox una sola vez (cacheado por device) y lo reusa.
 
-    Cargarlo es pesado (descarga de pesos + montaje), así que es lazy: no se carga hasta el
-    primer uso.
+    Es lazy: no se carga hasta el primer uso (en la práctica lo dispara el warm-up al
+    arrancar). Usa un lock con doble chequeo en vez de @lru_cache para que el warm-up (que
+    carga en un hilo aparte) y un request concurrente NO inicien dos cargas a la vez
+    (~6 GB -> OOM): el primero que entra carga; los demás esperan y reusan.
     """
-    if USAR_LATAM:
-        print(f"Cargando Chatterbox V3 + Language Pack es-MX (LatAm) en '{device}' (puede tardar)...")
-        ckpt_dir = _preparar_ckpt_latam()
-        modelo = ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=LATAM_T3_FILE)
-        _verificar_modelo_latam(modelo)
+    if device in _tts_cache:
+        return _tts_cache[device]
+    with _tts_lock:
+        if device in _tts_cache:  # lo cargó otro hilo mientras esperábamos el lock
+            return _tts_cache[device]
+        if USAR_LATAM:
+            print(f"Cargando Chatterbox V3 + Language Pack es-MX (LatAm) en '{device}' (puede tardar)...")
+            ckpt_dir = _preparar_ckpt_latam()
+            modelo = ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=LATAM_T3_FILE)
+            _verificar_modelo_latam(modelo)
+        else:
+            print(f"Cargando Chatterbox Multilingual {T3_MODEL.upper()} (general) en '{device}' (puede tardar)...")
+            modelo = ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model=T3_MODEL)
+        _tts_cache[device] = modelo
         return modelo
-
-    print(f"Cargando Chatterbox Multilingual {T3_MODEL.upper()} (general) en '{device}' (puede tardar)...")
-    return ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model=T3_MODEL)
 
 
 def synthesize(

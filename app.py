@@ -4,14 +4,16 @@ El handler es un GENERADOR: emite los pasos intermedios (STT -> Normalizado -> P
 medida que salen, y al final el audio, así el usuario ve el texto rápido antes de la parte
 lenta (la voz). El "portero" se respeta: si el texto falla, no se sintetiza.
 
-El modelo TTS carga lazy (la primera síntesis), vía la caché de synthesize._get_tts.
+El TTS se precarga al arrancar (warm-up en un hilo, no bloquea la UI) y se reusa cacheado
+con lock; ver synthesize._get_tts.
 """
 
 import tempfile
+import threading
 
 import gradio as gr
 
-from a_lo_paisa import pipeline
+from a_lo_paisa import pipeline, synthesize
 from a_lo_paisa.llm import TransformacionError
 from a_lo_paisa.synthesize import SintesisError, sintetizar
 
@@ -91,10 +93,21 @@ with gr.Blocks(title="A lo Paisa") as demo:
             audio_out = gr.Audio(label="Voz de salida", type="filepath")
             listo = gr.Markdown()  # "✅ ¡Listo!" debajo del audio, solo al terminar
 
-    boton.click(procesar, [audio_in, idioma, exageracion, registro], [pasos, audio_out, listo])
+    # concurrency_limit=1: procesamos un audio a la vez. Ya es el default de Gradio, pero
+    # explícito deja clara la intención (y no depende de que ese default no cambie).
+    boton.click(
+        procesar,
+        [audio_in, idioma, exageracion, registro],
+        [pasos, audio_out, listo],
+        concurrency_limit=1,
+    )
 
 
 if __name__ == "__main__":
+    # Warm-up: cargamos el TTS al arrancar en un hilo aparte (NO bloquea la UI), para
+    # aprovechar el rato que el usuario tarda grabando. El lock en _get_tts evita que este
+    # hilo y el primer request inicien dos cargas a la vez.
+    threading.Thread(target=lambda: synthesize._get_tts(synthesize._device_tts()), daemon=True).start()
     # launch() sin host/puerto fijos: en local Gradio busca un puerto libre (no choca con
     # otra instancia). En el Space (Docker) el host/puerto los fija el Dockerfile con
     # GRADIO_SERVER_NAME / GRADIO_SERVER_PORT (0.0.0.0:7860), que Gradio respeta solo.

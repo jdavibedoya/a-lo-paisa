@@ -94,6 +94,7 @@ uv run python -m a_lo_paisa.synthesize             # solo TTS
 | `src/a_lo_paisa/pipeline.py` | Orquestación reusable sin UI (la comparten CLI y app). |
 | `scripts/build_embeddings.py` | (Offline) construye el índice de embeddings del glosario. |
 | `scripts/cli.py` | Entrypoint CLI del pipeline completo. |
+| `scripts/prefetch.py` | (Build) hornea los modelos en la imagen para que el Space no los descargue en runtime. |
 | `app.py` | UI web (Gradio). |
 | `Dockerfile` | Imagen del Space (uv, CPU). |
 | `data/paisa_glossary.json` | Glosario paisa curado (neutro → términos con exageración, ejemplos, notas). |
