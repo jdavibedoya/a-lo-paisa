@@ -1,14 +1,8 @@
-"""Bootstrap del ENTORNO: carga el .env y expone secretos, rutas y require().
+"""Bootstrap del entorno: carga el .env y expone secretos, rutas y require().
 
-Foco deliberado: este módulo es SOLO la plomería de entorno/secretos. La config de
-cada modelo vive en SU módulo —el STT en transcribe.py, el TTS en synthesize.py, el
-LLM en llm.py—, donde es más localizable. Acá quedan únicamente las cosas
-transversales: cargar el .env una sola vez, las claves, las rutas del proyecto, y
-require() para fallar claro si falta una clave obligatoria.
-
-(La lista documentada de TODAS las variables de entorno que el proyecto lee está en
-.env.example, no acá: por eso distribuir la lectura por módulo no pierde el punto de
-auditoría.)
+Solo plomería transversal. La config de cada modelo vive en SU módulo (STT en
+transcribe.py, TTS en synthesize.py, LLM en llm.py); la lista completa de variables de
+entorno está documentada en .env.example.
 """
 
 import os
@@ -16,54 +10,25 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Rutas del proyecto.
-#
-# Calculamos la raíz de forma EXPLÍCITA en vez de confiar en "el directorio actual",
-# porque desde dónde ejecutes varía (terminal, IDE, Docker). __file__ es este archivo;
-# subimos tres niveles  src/a_lo_paisa/config.py -> src/a_lo_paisa -> src -> raíz.
-# ──────────────────────────────────────────────────────────────────────────────
+# Raíz del proyecto, calculada explícitamente (no depende del directorio de ejecución):
+# este archivo es src/a_lo_paisa/config.py, así que subimos tres niveles.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = PROJECT_ROOT / ".env"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 
-# load_dotenv() vuelca el contenido del .env en os.environ; a partir de ahí os.getenv()
-# lo ve. Se ejecuta al importar este módulo, así que cualquier módulo que vaya a leer
-# env vars debe importar config primero (aunque sea por este efecto).
-# override=False: si una variable ya existe en el entorno real, esa gana sobre el
-# .env (útil en Spaces, donde los secretos se inyectan por entorno).
+# Carga el .env al importar este módulo (por eso otros módulos lo importan, aunque sea
+# por efecto). override=False: una variable ya presente en el entorno real gana sobre el
+# .env (útil en Spaces, que inyectan secretos por entorno).
 load_dotenv(dotenv_path=ENV_PATH, override=False)
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Claves / tokens (secretos). Pueden ser None si no están definidas: no reventamos
-# acá, porque hay etapas que no las necesitan. La validación se hace bajo demanda con
-# require() solo cuando un módulo realmente la necesita.
-#
-# HF_TOKEN: token de Hugging Face. Chatterbox descarga sus pesos de un repo PÚBLICO,
-# así que no es obligatorio, pero evita límites de descarga y hace falta para Spaces
-# privados.
-# ──────────────────────────────────────────────────────────────────────────────
+# Secretos: pueden ser None (no toda etapa los necesita); se validan bajo demanda con
+# require(). HF_TOKEN es opcional (Chatterbox baja de un repo público; evita rate limits).
 GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
 HF_TOKEN: str | None = os.getenv("HF_TOKEN")
 
 
 def require(name: str) -> str:
-    """Devuelve el valor de una variable de entorno obligatoria o falla claro.
-
-    Úsalo cuando un módulo SÍ necesita la clave para funcionar. Por ejemplo, llm.py
-    hará `config.require("GEMINI_API_KEY")` y, si no está, verás un error explicando
-    exactamente qué configurar, en vez de un fallo confuso más adelante en la cadena.
-
-    Args:
-        name: nombre de la variable de entorno (p. ej. "GEMINI_API_KEY").
-
-    Returns:
-        El valor de la variable como str.
-
-    Raises:
-        RuntimeError: si la variable no está definida o está vacía.
-    """
+    """Devuelve una variable de entorno obligatoria, o falla con un mensaje accionable."""
     value = os.getenv(name)
     if not value:
         raise RuntimeError(

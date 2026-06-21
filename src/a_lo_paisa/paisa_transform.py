@@ -1,16 +1,8 @@
-"""Transformación a paisa: la capa de GENERACIÓN del pipeline STT -> (normalización) -> paisa.
+"""Transformación a paisa: la capa de GENERACIÓN (LLM) del pipeline.
 
-Acá vive solo lo de GENERAR con el LLM: el prompt de transformación, los few-shot, la
-llamada al modelo con reintentos, y los dos pasos del pipeline que usan el LLM
-(transformar_a_paisa y normalizar_a_espanol). La RECUPERACIÓN (glosario, embeddings,
-búsqueda semántica) vive en retrieve.py; el cliente de Gemini y la excepción común,
-en llm.py.
-
-Es un WORKFLOW determinista A PROPÓSITO (pasos fijos orquestados por código), NO un
-agente autónomo: el LLM no decide qué herramientas usar ni planifica. Igual quedó
-estructurado por si algún día una necesidad REAL de autonomía lo justifica —
-`lookup_paisa` (en retrieve.py) ya es una tool limpia y tipada—, pero hoy no hace falta
-y agregarlo sería complejidad sin retorno.
+Acá vive lo de generar con el LLM: el prompt de transformación, los few-shot, la llamada
+con reintentos, y los dos pasos que usan el LLM (transformar_a_paisa y normalizar_a_espanol).
+La recuperación (RAG) vive en retrieve.py; el cliente y la excepción común, en llm.py.
 """
 
 import sys
@@ -23,27 +15,17 @@ from google.genai import types, errors
 from a_lo_paisa.llm import MODEL, TransformacionError, get_client
 from a_lo_paisa.retrieve import formatear_contexto, lookup_paisa
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Defaults de la llamada de GENERACIÓN. El IDENTIFICADOR del modelo (MODEL) vive en
-# llm.py y se importa arriba.
-# ──────────────────────────────────────────────────────────────────────────────
-# Temperaturas SEPARADAS por tarea (cada función pasa la suya a llamar_modelo):
-#   - normalización = traducción FIEL a español neutro -> casi determinista, que NO
-#     invente ni adorne.
-#   - transformación = reescritura paisa, con algo de chispa pero CONTROLADA (por
-#     debajo de 1.0, el default de Gemini, que tiende a inventar/exagerar).
+# Temperaturas separadas por tarea: normalización casi determinista (traducción fiel, que
+# no invente); transformación con algo de chispa pero controlada (debajo de 1.0).
 TEMP_NORMALIZACION = 0.2
 TEMP_TRANSFORMACION = 0.7
 
 MAX_REINTENTOS = 4
 BACKOFF_SEGUNDOS = 8.0
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Few-shot etiquetados. Cada uno es (exageración, registro, entrada neutra, salida
-# paisa) y cubre las 4 esquinas del espectro: niveles {1,3} × registros {urbano,
-# montañero}, para que el modelo vea el CONTRASTE entre niveles y registros.
-# ──────────────────────────────────────────────────────────────────────────────
+# Few-shot (exageración, registro, entrada neutra, salida paisa), cubriendo las 4 esquinas
+# del espectro: niveles {1,3} × registros {urbano, montañero}, para que el modelo vea el
+# contraste entre niveles y registros.
 FEW_SHOT = [
     (1, "urbano",     "Hola, ¿cómo estás? ¿Todo en orden?",
                       "Hola, ¿bien o qué? ¿Todo bien parce?"),
@@ -57,31 +39,26 @@ FEW_SHOT = [
 
 
 def _formato_entrada(texto: str, exageracion: int, registro: str | None) -> str:
-    """Etiqueta una entrada con el nivel y registro pedidos.
+    """Etiqueta una entrada como '[exageración N · registro R]\\n<texto>'.
 
-    El modelo recibe cada texto como '[exageración N · registro R]\\n<texto>'. Esta
-    etiqueta es la que le dice qué nivel/registro aplicar, y es la que hace que los
-    few-shot (que mezclan niveles y registros) tengan sentido: el modelo ve la
-    etiqueta de cada ejemplo y aprende a qué corresponde cada estilo.
+    Esa etiqueta le dice al modelo qué nivel/registro aplicar, y hace que los few-shot (que
+    mezclan niveles y registros) tengan sentido.
     """
     reg = registro or "general"
     return f"[exageración {exageracion} · registro {reg}]\n{texto}"
 
 
 def construir_prompt_transformacion(glosario_contexto: str | None = None) -> str:
-    """Arma el system prompt de PRODUCCIÓN.
+    """Arma el system prompt de producción.
 
-    No fija un nivel/registro concreto: eso viaja ETIQUETADO en cada turno del
-    usuario ([exageración N · registro R]). El prompt describe la escala y los
-    registros de forma general; los few-shot muestran cada combinación. El bloque del
-    glosario solo se incluye cuando hay contexto recuperado, y se enmarca como
-    vocabulario DISPONIBLE (no obligatorio), porque en pruebas el modelo se "encerraba"
-    en los términos recuperados y sonaba rígido.
+    No fija nivel/registro: eso viaja etiquetado en cada turno del usuario. El bloque del
+    glosario solo se incluye si hay contexto recuperado, y se enmarca como vocabulario
+    DISPONIBLE (no obligatorio): en pruebas, el modelo se "encerraba" en los términos
+    recuperados y sonaba rígido.
     """
-    # Bloque del glosario (solo cuando hay contexto recuperado). Lo armamos con
-    # dedent (indentado bajo la función, profesional) y sustituimos el contexto
-    # DESPUÉS de dedent, NO por f-string: interpolar texto multilínea a margen 0
-    # ANTES de dedent rompería el cálculo del prefijo común (lo dejaría en 0).
+    # Bloque del glosario (solo si hay contexto). Sustituimos el contexto DESPUÉS de dedent
+    # (no por f-string): interpolar texto multilínea a margen 0 antes de dedent rompería el
+    # cálculo del prefijo común.
     bloque_glosario = ""
     if glosario_contexto:
         bloque_glosario = textwrap.dedent(
@@ -96,9 +73,8 @@ def construir_prompt_transformacion(glosario_contexto: str | None = None) -> str
             """
         ).replace("{GLOSARIO_CONTEXTO}", glosario_contexto)
 
-    # Plantilla del prompt con dedent. El bloque del glosario se inserta con replace
-    # DESPUÉS de dedent (misma razón de arriba). Por eso es str normal, no f-string,
-    # y el centinela {BLOQUE_GLOSARIO} se sustituye al final.
+    # El bloque se inserta con replace después de dedent (misma razón), por eso el centinela
+    # {BLOQUE_GLOSARIO} y no un f-string.
     plantilla = textwrap.dedent(
         """\
         Sos un experto en el español paisa de Antioquia, Colombia (el de Medellín y sus pueblos).
@@ -162,23 +138,15 @@ def llamar_modelo(
     max_reintentos: int = MAX_REINTENTOS,
     backoff: float = BACKOFF_SEGUNDOS,
 ) -> str:
-    """ÚNICA función que habla con el modelo de generación. La reusan los dos pasos.
+    """Única función que habla con el modelo de generación; la reusan los dos pasos.
 
-    `few_shot` es OPCIONAL a propósito: transformar_a_paisa la llama CON los ejemplos
-    paisa (FEW_SHOT), pero normalizar_a_espanol la llama SIN ejemplos (lista vacía),
-    porque la normalización a español neutro NO debe ver jerga paisa —se la pasáramos,
-    la contaminaría—. Si few_shot viene vacío, la conversación es solo el turno del
-    usuario.
-
-    Reintenta ante errores TRANSITORIOS (429 y 5xx "high demand") con backoff
-    exponencial. Si la falla es NO recuperable (reintentos agotados, respuesta vacía
-    o bloqueada, u otro error de API), LEVANTA TransformacionError con un mensaje apto
-    para el usuario —nunca devuelve un string "[ERROR...]"—, para que el portero del
-    orquestador la atrape y no la confunda con el texto generado.
+    `few_shot` es opcional a propósito: transformar_a_paisa la llama CON los ejemplos paisa,
+    normalizar_a_espanol SIN ellos (la normalización no debe ver jerga paisa, la
+    contaminaría). Reintenta ante errores transitorios (429 y 5xx) con backoff exponencial;
+    ante una falla no recuperable levanta TransformacionError con un mensaje apto para el
+    usuario (nunca devuelve un string "[ERROR...]").
     """
-    # Few-shot como turnos alternados user->model (puede ir vacío). El modelo ve el
-    # patrón entrada->salida antes del texto real. Cada ejemplo se ETIQUETA con su
-    # nivel/registro.
+    # Few-shot como turnos alternados user->model (puede ir vacío), cada uno etiquetado.
     contents = []
     for exa_ej, reg_ej, entrada_ej, salida_paisa in few_shot:
         entrada_etiquetada = _formato_entrada(entrada_ej, exa_ej, reg_ej)
@@ -227,8 +195,7 @@ def llamar_modelo(
             # Cualquier otro error de la API: no recuperable.
             raise TransformacionError("Hubo un problema al contactar la IA. Intentá de nuevo.") from e
 
-        # Llegamos acá SOLO con respuesta (sin excepción): validamos que traiga texto.
-        # resp.text vacío suele ser bloqueo por filtros de seguridad; no reintentamos.
+        # Respuesta sin excepción: validamos que traiga texto (vacío suele ser bloqueo por filtros).
         texto = (resp.text or "").strip()
         if not texto:
             raise TransformacionError(
@@ -241,29 +208,20 @@ def llamar_modelo(
 
 
 def transformar_a_paisa(texto: str, exageracion: int = 2, registro: str | None = "montañero") -> str:
-    """WORKFLOW completo: lookup_paisa -> formatear_contexto -> prompt -> generar.
+    """Recupera contexto del glosario (RAG), arma el prompt y genera el texto paisa.
 
     Args:
         texto: frase neutra a reescribir.
         exageracion: 1 (sutil) a 3 (recargado). Default 2.
         registro: "urbano", "montañero" o None (= general). Default "montañero".
 
-    Returns:
-        El texto reescrito en paisa.
-
     Raises:
-        TransformacionError: si el LLM falla de forma no recuperable (lo levanta
-            llamar_modelo). NO devuelve marcadores "[ERROR...]".
+        TransformacionError: si el LLM falla de forma no recuperable.
     """
-    # 1) Recuperar contexto semánticamente relevante del glosario (capa retrieve).
-    entradas = lookup_paisa(texto)
+    entradas = lookup_paisa(texto)  # contexto semánticamente relevante (RAG)
     contexto = formatear_contexto(entradas)
-
-    # 2) Construir el prompt. El nivel/registro NO van acá: viajan etiquetados en el
-    #    turno del usuario.
+    # El nivel/registro no van en el system prompt: viajan etiquetados en el turno del usuario.
     system_prompt = construir_prompt_transformacion(glosario_contexto=contexto)
-
-    # 3) Generar CON los few-shot paisa.
     entrada_etiquetada = _formato_entrada(texto, exageracion, registro)
     return llamar_modelo(
         get_client(), system_prompt, entrada_etiquetada,
@@ -272,22 +230,15 @@ def transformar_a_paisa(texto: str, exageracion: int = 2, registro: str | None =
 
 
 def normalizar_a_espanol(texto: str) -> str:
-    """Traduce/normaliza `texto` (de CUALQUIER idioma) a ESPAÑOL NEUTRO vía Gemini.
+    """Normaliza `texto` (de cualquier idioma) a español neutro (no paisa) vía Gemini.
 
-    Es el puente STT -> agente para los diales 'inglés' y 'otro': deja el texto en
-    español estándar (NO paisa) para que transformar_a_paisa parta siempre del mismo
-    punto. CUÁNDO se llama lo decide el dial en el orquestador (no esta función).
-
-    Reusa llamar_modelo SIN few-shot (lista vacía por defecto): la normalización no
-    usa ejemplos paisa —se los pasáramos, la confundirían con jerga—. Por eso NO le
-    pasamos FEW_SHOT.
+    Es el puente STT -> reescritura para los diales 'inglés'/'otro': deja todo en el mismo
+    punto de partida. Cuándo se llama lo decide el dial. Sin few-shot a propósito (la
+    normalización no debe ver jerga paisa).
 
     Raises:
-        TransformacionError: si el LLM falla de forma no recuperable (lo levanta
-            llamar_modelo). Es la MISMA excepción que usa transformar_a_paisa, así el
-            portero del orquestador atrapa ambos pasos con un único except.
+        TransformacionError: si el LLM falla de forma no recuperable.
     """
-
     plantilla = textwrap.dedent(
         """\
         Recibes un texto transcrito de un audio. 
@@ -299,14 +250,9 @@ def normalizar_a_espanol(texto: str) -> str:
     return llamar_modelo(get_client(), plantilla, texto, model=MODEL, temperature=TEMP_NORMALIZACION)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
 # Prueba manual:  uv run python -m a_lo_paisa.paisa_transform
-#
-# Caso clave: una frase con SINÓNIMOS que NO están en el glosario ('compañero' por
-# amigo, 'billete' por dinero). Si el RAG semántico funciona, debería traer igual
-# las entradas 'amigo' y 'dinero' por SIGNIFICADO, cosa que la recuperación léxica
-# no lograría con 'compañero'.
-# ──────────────────────────────────────────────────────────────────────────────
+# Frases con SINÓNIMOS fuera del glosario ('compañero' por amigo, 'billete' por dinero):
+# si el RAG semántico funciona, trae igual 'amigo'/'dinero' por significado.
 if __name__ == "__main__":
     try:
         frases = [
@@ -321,12 +267,8 @@ if __name__ == "__main__":
             for exa in (1, 3):
                 print(f"  [exageración {exa}] {transformar_a_paisa(texto, exageracion=exa)}")
     except (FileNotFoundError, RuntimeError) as e:
-        # Errores de índice ausente/desfasado: mensaje accionable, sin traceback.
-        print(f"\n❌ {e}")
+        print(f"\n❌ {e}")  # índice ausente/desfasado: mensaje accionable, sin traceback
         sys.exit(1)
     except TransformacionError as e:
-        # Falla no recuperable del LLM, ya sea de generación o del embed de
-        # lookup_paisa (que retrieve.py también pliega a esta excepción): mensaje
-        # amable, sin traceback.
-        print(f"\n⚠️  {e}")
+        print(f"\n⚠️  {e}")  # falla no recuperable del LLM (o del embed): mensaje amable
         sys.exit(1)

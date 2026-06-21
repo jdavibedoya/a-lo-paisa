@@ -17,15 +17,8 @@ __pycache__/
 # Salidas generadas por el pipeline (audios sintetizados, transcripciones, etc.).
 /outputs/
 
-# Cachés de modelos descargados. Pueden pesar GBs; se vuelven a descargar solos.
-# faster-whisper / ctranslate2 / Hugging Face / Torch guardan aquí sus pesos.
+# Caché local de modelos (ensamblado de Chatterbox + descargas). Pesa GBs; se re-baja sola.
 .cache/
-**/.cache/
-huggingface/
-.huggingface/
-models/
-*.bin
-*.pt
 
 # Material de archivo: experimentos congelados + PDFs de diccionarios (terceros, con
 # copyright). No va al repo público; queda solo en local.

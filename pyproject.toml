@@ -1,74 +1,38 @@
-# ──────────────────────────────────────────────────────────────────────────────
-# pyproject.toml — el "manifiesto" del proyecto, gestionado por uv.
-#
-# uv lee este archivo para saber: cómo se llama el paquete, qué versión de
-# Python necesita y qué dependencias instalar. Es el equivalente moderno a
-# combinar requirements.txt + setup.py en un solo archivo estándar (PEP 621).
-# ──────────────────────────────────────────────────────────────────────────────
-
 [project]
 name = "a-lo-paisa"
 version = "0.1.0"
-description = "Pipeline de voz: STT → agente que reescribe en jerga paisa → TTS con voz clonada."
+description = "Pipeline de voz: STT → reescritura a paisa antioqueño (RAG) → TTS con voz clonada."
 readme = "README.md"
 
-# Python 3.11: valor con wheels estables para todo el stack (faster-whisper/ctranslate2,
-# torch, gradio) y compatible con los pins de chatterbox. El Space va en Docker en CPU
-# (no ZeroGPU), así que NO hay restricción de versión de HF; usamos la nativa, sin trucos.
-# ">=3.11,<3.12" = cualquier 3.11.x.
+# Python 3.11: wheels estables para todo el stack y compatible con los pins de chatterbox.
 requires-python = ">=3.11,<3.12"
 
-# Dependencias SOLO de esta etapa. Deliberadamente NO incluimos smolagents,
-# gradio ni coqui-tts: esos llegan en etapas posteriores y los agregaremos con
-# `uv add` cuando toque, para no inflar el entorno antes de tiempo.
 dependencies = [
-    # faster-whisper: motor de transcripción (STT). Es una reimplementación de
-    # Whisper sobre CTranslate2, mucho más rápida y ligera en CPU que el Whisper
-    # original de OpenAI. Trae consigo ctranslate2 como dependencia.
-    "faster-whisper>=1.0.0",
-    # python-dotenv: lee el archivo .env y vuelca sus variables al entorno.
-    # Lo usa config.py para cargar las claves en un solo lugar.
-    "python-dotenv>=1.0.0",
-    # chatterbox-tts: motor de TTS multilingüe con clonación de voz (Resemble AI).
-    # Fija pins DUROS (torch==2.6.0, torchaudio==2.6.0, numpy<2.0, transformers==5.2.0,
-    # gradio==6.8.0). Los respetamos TAL CUAL: como el Space va en Docker en CPU (no
-    # ZeroGPU), no necesitamos torch 2.8 ni overrides; la config nativa de chatterbox es
-    # la más limpia. torch/transformers SOLO los usa el TTS, no el STT (ctranslate2).
+    "faster-whisper>=1.0.0",  # STT (Whisper sobre CTranslate2; rápido y liviano en CPU)
+    "python-dotenv>=1.0.0",   # carga el .env (lo usa config.py)
+    # chatterbox-tts: TTS multilingüe con clonación de voz. Fija pins DUROS (torch==2.6.0,
+    # numpy<2, transformers==5.2.0, gradio==6.8.0); los respetamos tal cual (en CPU no hace
+    # falta tocarlos). Se instala desde git: ver [tool.uv.sources].
     "chatterbox-tts",
-    # setuptools<81: NO es un capricho. resemble-perth (el marcador de agua PerTh,
-    # dependencia de chatterbox) importa `pkg_resources`, que lo provee setuptools.
-    # Los entornos de uv NO traen setuptools por defecto, y además setuptools 81+
-    # ELIMINÓ pkg_resources. Sin este pin, perth.PerthImplicitWatermarker queda en
-    # None y Chatterbox revienta con "'NoneType' object is not callable" al cargar.
-    # Quitar el "<81" volvería a romper el TTS.
+    # setuptools<81: resemble-perth (la marca de agua de chatterbox) importa pkg_resources,
+    # que setuptools 81+ eliminó y uv no trae por defecto. Sin este pin, el TTS revienta.
     "setuptools<81",
-    "google-genai>=2.8.0",
-    "sounddevice>=0.5.5",
-    "gradio>=6.8.0",
+    "google-genai>=2.8.0",  # LLM (normalización, reescritura) + embeddings del RAG
+    "sounddevice>=0.5.5",   # grabación del micrófono (CLI)
+    "gradio>=6.8.0",        # UI web (app.py)
 ]
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Sistema de build.
-#
-# Como usamos un "src layout" (el código vive en src/a_lo_paisa), necesitamos un
-# backend de empaquetado para que uv instale el paquete en modo editable. Así
-# podrás hacer `from a_lo_paisa import config` desde cualquier sitio sin trucos
-# de sys.path. Hatchling es el backend por defecto que usa `uv init --package`.
-# ──────────────────────────────────────────────────────────────────────────────
+# src layout: el código vive en src/a_lo_paisa, instalado en modo editable por Hatchling.
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# Le decimos a Hatchling dónde está el paquete real dentro del repo.
 packages = ["src/a_lo_paisa"]
 
 [tool.uv.sources]
-# chatterbox-tts se instala desde GitHub (no PyPI) A PROPÓSITO: el checkpoint
-# multilingüe V3 (mejor español, y base del Language Pack es-MX LatAm que usa el
-# TTS) solo existe en master; la última versión publicada en PyPI (0.1.7) es V2 y
-# ni siquiera acepta el argumento t3_model="v3". El pin de git es reproducible
-# (uv.lock fija el commit exacto).
-# TODO (cuando se publique V3 en PyPI): cambiar esto por una versión normal en
-# [project.dependencies] (p. ej. "chatterbox-tts>=X") y borrar esta sección.
+# chatterbox-tts desde git A PROPÓSITO: el checkpoint V3 (mejor español, base del Language
+# Pack es-MX) solo está en master; la 0.1.7 de PyPI es V2 y ni acepta t3_model="v3". El
+# commit queda fijo en uv.lock.
+# TODO: cuando V3 esté en PyPI, cambiar a una versión normal en [project.dependencies].
 chatterbox-tts = { git = "https://github.com/resemble-ai/chatterbox.git" }

@@ -1,10 +1,5 @@
-# ──────────────────────────────────────────────────────────────────────────────
-# Dockerfile para el Hugging Face Space (SDK = docker, hardware CPU).
-#
-# Por qué Docker (y no el SDK Gradio): control total del entorno y deps 100%
-# reproducibles vía uv + uv.lock (sin requirements.txt que se desincronice). El
-# mismo lock que probaste en local se instala acá, byte por byte.
-# ──────────────────────────────────────────────────────────────────────────────
+# Imagen del Hugging Face Space (SDK docker, CPU). Usa uv + uv.lock para instalar las deps
+# 100% reproducibles: el mismo lock probado en local se instala acá.
 
 # Imagen oficial de uv con Python 3.11 (Debian slim). Trae uv preinstalado.
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim

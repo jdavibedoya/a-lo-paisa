@@ -1,14 +1,10 @@
-"""ENTRYPOINT de línea de comandos del pipeline completo (voz -> voz).
+"""Entrypoint de línea de comandos del pipeline completo (voz -> voz).
 
-Capa DELGADA: parsea argumentos, consigue el audio (archivo o micrófono), llama a la
-orquestación reusable (a_lo_paisa.pipeline.audio_a_paisa), PRESENTA el texto y recién
-entonces sintetiza la voz. Toda la lógica del pipeline vive en el paquete; acá solo
-está lo propio de un CLI (argparse, micrófono, prints, códigos de salida).
-
-El "portero" se ve explícito abajo: audio_a_paisa() hace el TEXTO y puede fallar con
-TransformacionError ANTES de devolver; solo si devuelve bien llamamos al TTS, así que
-NUNCA se sintetiza un error. Un fallo de VOZ (SintesisError) es posterior y distinto:
-para entonces el texto paisa ya se mostró, así que solo avisamos.
+Capa delgada: parsea argumentos, consigue el audio (archivo o micrófono), llama a la
+orquestación reusable (pipeline.audio_a_paisa), muestra el texto y recién entonces
+sintetiza. Toda la lógica del pipeline vive en el paquete; acá solo lo propio del CLI
+(argparse, micrófono, prints). El "portero" se ve abajo: si el texto falla, no se llega
+al TTS; un fallo de voz es posterior y para entonces el texto ya se mostró.
 
 Uso:
     uv run python scripts/cli.py --audio voz.wav --idioma español
@@ -20,24 +16,18 @@ import sys
 import tempfile
 import wave
 
-from a_lo_paisa import config
-from a_lo_paisa import pipeline
+from a_lo_paisa import config, pipeline
 from a_lo_paisa.llm import TransformacionError
 from a_lo_paisa.synthesize import SintesisError, sintetizar
 
-# Frecuencia de grabación del micrófono. 16 kHz mono es el estándar de whisper.
-SR_GRABACION = 16000
+SR_GRABACION = 16000  # 16 kHz mono, el estándar de whisper
 
 
 def grabar_microfono() -> str:
-    """Graba del micrófono hasta que el usuario presione Enter; guarda un .wav temporal.
+    """Graba del micrófono hasta Enter y guarda un .wav temporal.
 
-    Importamos sounddevice/numpy ACÁ DENTRO (no arriba) a propósito: así, si se usa
-    --audio (un archivo), el script no exige tener micrófono/PortAudio ni la
-    dependencia de grabación. Solo quien graba paga ese import.
-
-    Capturamos con sounddevice y escribimos el WAV con `wave` (stdlib), para no
-    sumar otra dependencia solo para guardar el archivo.
+    Importa sounddevice/numpy acá dentro a propósito: si se usa --audio, el script no
+    exige tener micrófono ni esas dependencias.
     """
     import queue
 
@@ -47,7 +37,6 @@ def grabar_microfono() -> str:
     cola: queue.Queue = queue.Queue()
 
     def callback(indata, frames, tiempo, status):
-        # El callback corre en un hilo aparte de sounddevice; solo acumula bloques.
         if status:
             print(f"  (aviso de audio: {status})", file=sys.stderr)
         cola.put(indata.copy())
@@ -64,11 +53,10 @@ def grabar_microfono() -> str:
         sys.exit(1)
     audio = np.concatenate(bloques, axis=0)
 
-    # Guardamos a un .wav temporal (PCM 16-bit mono).
     tmp = tempfile.NamedTemporaryFile(prefix="a_lo_paisa_", suffix=".wav", delete=False)
     with wave.open(tmp.name, "wb") as wf:
         wf.setnchannels(1)
-        wf.setsampwidth(2)  # int16 = 2 bytes por muestra
+        wf.setsampwidth(2)  # int16 = 2 bytes
         wf.setframerate(SR_GRABACION)
         wf.writeframes(audio.tobytes())
     print(f"  audio guardado en: {tmp.name}")
@@ -76,14 +64,11 @@ def grabar_microfono() -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Pipeline completo: STT -> normalización -> paisa -> TTS.",
-    )
+    parser = argparse.ArgumentParser(description="Pipeline completo: STT -> normalización -> paisa -> TTS.")
     parser.add_argument("--audio", help="Ruta a un .wav. Si falta, GRABA del micrófono.")
     parser.add_argument(
         "--idioma",
-        # Las opciones del dial salen de la MISMA fuente que usa el pipeline.
-        choices=list(pipeline.DIAL_A_CODIGO),
+        choices=list(pipeline.DIAL_A_CODIGO),  # misma fuente que usa el pipeline
         default="español",
         help="Dial de idioma de ENTRADA (default: español).",
     )
@@ -96,28 +81,24 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 1) Conseguir el audio: archivo dado o grabación del micrófono.
     ruta_audio = args.audio or grabar_microfono()
 
-    # 2) TEXTO (STT -> normalización -> paisa). El portero: si falla acá, cortamos
-    #    ANTES de tocar el TTS.
+    # TEXTO (portero: si falla acá, cortamos antes de tocar el TTS).
     try:
         res = pipeline.audio_a_paisa(ruta_audio, args.idioma, args.exageracion, args.registro)
     except TransformacionError as e:
         print(f"\n⚠️  No se pudo procesar el mensaje: {e}")
         sys.exit(1)
 
-    # 3) Texto OK: lo mostramos APENAS lo tenemos, antes de la voz (el TTS es lento; así
-    #    el usuario ve su texto paisa de inmediato, y lo conserva aunque el TTS falle).
+    # Mostramos el texto antes de la voz (el TTS es lento; el usuario lo conserva aunque falle).
     if res.se_normalizo:
         print(f"Normalizado: {res.texto_es}")
     print(f"\n🗣️  Paisa: {res.paisa}")
 
-    # 4) VOZ: el último eslabón. El MISMO dial de exageración gobierna también el TTS.
+    # VOZ (último eslabón; el mismo dial de exageración la gobierna).
     try:
         ruta = sintetizar(res.paisa, args.salida, args.exageracion)
     except SintesisError as e:
-        # Falló la VOZ, no el texto: el paisa ya está impreso arriba. Avisamos y salimos.
         print(f"\n⚠️  La síntesis de voz falló (tu texto paisa está arriba): {e}")
         sys.exit(1)
 
