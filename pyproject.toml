@@ -18,7 +18,6 @@ dependencies = [
     # que setuptools 81+ eliminó y uv no trae por defecto. Sin este pin, el TTS revienta.
     "setuptools<81",
     "google-genai>=2.8.0",  # LLM (normalización, reescritura) + embeddings del RAG
-    "sounddevice>=0.5.5",   # grabación del micrófono (CLI)
     "gradio>=6.8.0",        # UI web (app.py)
 ]
 

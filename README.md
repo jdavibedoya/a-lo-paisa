@@ -66,20 +66,9 @@ uv run python scripts/build_embeddings.py    # índice del glosario (1 vez, y ca
 uv run python app.py        # abre en http://localhost:7860
 ```
 
-**Pipeline por CLI** (voz → voz):
-
-```bash
-uv run python scripts/cli.py --audio tu_voz.wav --idioma español
-uv run python scripts/cli.py --idioma inglés --exageracion 3 --registro urbano   # graba del micrófono
-```
-
-**Etapas sueltas**:
-
-```bash
-uv run python -m a_lo_paisa.transcribe audio.wav   # solo STT
-uv run python -m a_lo_paisa.paisa_transform        # solo la reescritura (texto)
-uv run python -m a_lo_paisa.synthesize             # solo TTS
-```
+También hay un **CLI** del pipeline completo (`scripts/cli.py`) y cada **etapa** corre como
+módulo (`python -m a_lo_paisa.transcribe`, etc.). Los detalles de uso (flags, ejemplos)
+están en el docstring/`--help` de cada archivo.
 
 ## Estructura
 
@@ -94,7 +83,7 @@ uv run python -m a_lo_paisa.synthesize             # solo TTS
 | `src/a_lo_paisa/pipeline.py` | Orquestación reusable sin UI (la comparten CLI y app). |
 | `scripts/build_embeddings.py` | (Offline) construye el índice de embeddings del glosario. |
 | `scripts/cli.py` | Entrypoint CLI del pipeline completo. |
-| `scripts/prefetch.py` | (Build) hornea los modelos en la imagen para que el Space no los descargue en runtime. |
+| `scripts/prefetch.py` | (Build) hornea los modelos en la imagen. |
 | `app.py` | UI web (Gradio). |
 | `Dockerfile` | Imagen del Space (uv, CPU). |
 | `data/paisa_glossary.json` | Glosario paisa curado (neutro → términos con exageración, ejemplos, notas). |
