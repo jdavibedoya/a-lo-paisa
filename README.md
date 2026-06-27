@@ -6,22 +6,21 @@ colorTo: white
 sdk: docker
 app_port: 7860
 pinned: false
-short_description: Voice pipeline with RAG: STT → Paisa transformation → TTS with cloned voice.
+short_description: "Voice pipeline with RAG: STT → Paisa transformation → TTS with cloned voice."
 ---
 
 # ⛰️🫓 A lo Paisa
 > Voice-to-Voice Pipeline for Antioquian Spanish
 
-[![Hugging Face Spaces](https://img.shields.io/badge/HF-A_lo_Paisa-FFD21E?logo=huggingface&logoColor=black)](REEMPLAZAR_CON_LINK_DE_HUGGINGFACE)
+[![Hugging Face Spaces](https://img.shields.io/badge/HF-A_lo_Paisa-FFD21E?logo=huggingface)](REEMPLAZAR_CON_LINK_DE_HUGGINGFACE)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-EE4C2C?logo=pytorch&logoColor=white)
 ![Google GenAI](https://img.shields.io/badge/LLM-Google_GenAI-4285F4?logo=google&logoColor=white)
 ![Gradio](https://img.shields.io/badge/UI-Gradio_6.8-FF7C00?logo=gradio&logoColor=white)
 ![Faster Whisper](https://img.shields.io/badge/STT-Faster_Whisper-10A37F)
 ![Chatterbox](https://img.shields.io/badge/TTS-Chatterbox_V3-000000)
-![uv](https://img.shields.io/badge/Manager-uv-261230)
 
-An end-to-end voice pipeline that transforms speech audio into Paisa Spanish (Antioquia, Colombia) using a cloned voice:
+End-to-end voice pipeline that transforms speech audio into Paisa Spanish (Antioquia, Colombia) using a cloned voice:
 
 <div align="center">
   <figure>
@@ -33,10 +32,13 @@ An end-to-end voice pipeline that transforms speech audio into Paisa Spanish (An
   </figure>
 </div>
 
-| <div style="width: 175px">Dials</div> | Input | Output |
+
+## 🎧 Examples
+
+| Dials&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Input | Output |
 | :--- | :--- | :--- |
-| *Idioma:* `español`<br>*Exageración:* `2`<br>*Registro:* `urbano` | [▶️ Audio](LINK_RAW_GITHUB)<br><small>"Hoy es un día tranquilo en la montaña con algo de lluvia y un cielo gris me gusta correr temprano y escuchar música"</small> | [▶️ Audio](LINK_RAW_GITHUB)<br><small>"Hoy está el día como tranquilito por acá en la montaña, con una agüita y el cielo medio gris. A mí me gusta, pues, correr bien tempranito y escuchar música."</small> |
-| *Idioma:* `inglés`<br>*Exageración:* `2`<br>*Registro:* `montañero` | [▶️ Audio](LINK_RAW_GITHUB)<br><small>"She can scoop these things into three red bags and we will go meet her Wednesday at the train station."</small> | [▶️ Audio](LINK_RAW_GITHUB)<br>"<small>Ella puede meter esas cositas en tres bolsas rojas y nos pillamos con ella el miércoles en la estación del tren, ¿sí o qué?"</small> |
+| *Idioma:* `español`<br>*Exageración:* `2`<br>*Registro:* `urbano` | [▶️](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/spanish_input.wav)<br><small>"Hoy es un día tranquilo en la montaña con algo de lluvia y un cielo gris me gusta correr temprano y escuchar música"</small> | [▶️](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/spanish_output.wav)<br><small>"Hoy está el día como tranquilito por acá en la montaña, con una agüita y el cielo medio gris. A mí me gusta, pues, correr bien tempranito y escuchar música."</small> |
+| *Idioma:* `inglés`<br>*Exageración:* `2`<br>*Registro:* `montañero` | [▶️](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/english_input.wav)<br><small>"She can scoop these things into three red bags and we will go meet her Wednesday at the train station."</small> | [▶️](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/english_output.wav)<br><small>"Ella puede meter esas cositas en tres bolsas rojas y nos pillamos con ella el miércoles en la estación del tren, ¿sí o qué?"</small> |
 
 ---
 ## How it Works
@@ -117,6 +119,6 @@ Each stage can also be executed as a standalone module. Check the docstrings or 
 | `data/paisa_glossary.json` | Curated Paisa dataset. |
 
 ---
-**Note on language:** ode comments and docstrings are in **Spanish**.
+**Note on language:** Code comments and docstrings are in **Spanish**.
 
 *Developed by [David Bedoya](https://github.com/jdavibedoya)*
