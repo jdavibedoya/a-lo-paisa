@@ -1,19 +1,12 @@
 """TTS (Text-To-Speech) con voz clonada usando Chatterbox Multilingual.
 
-Chatterbox (Resemble AI) hace clonación de voz zero-shot: no entrenamos nada, le pasamos
-un audio de referencia (data/voice_reference.aif) y el modelo imita ese timbre. Todo audio
-generado lleva una marca de agua neuronal imperceptible (PerTh) que identifica audio de
-IA; es parte del diseño del modelo, no se quita.
+Chatterbox (Resemble AI) hace clonación de voz zero-shot: se le pasa audio de referencia
+(data/voice_reference.wav) y el modelo imita ese timbre.
+El audio generado incluye PerTh, una marca de agua invisible que lo identifica como IA.
 """
 
-import os
 import threading
 from pathlib import Path
-
-# En Apple Silicon, algunos ops de Chatterbox no están implementados en MPS. Esta variable
-# hace que torch caiga a CPU solo para esos ops, en vez de reventar. Va ANTES de importar
-# torch/torchaudio (que inicializan el backend).
-os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import torch
 import torchaudio as ta
@@ -21,236 +14,143 @@ from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # clase MULTILINGÜE (
 
 from a_lo_paisa import config
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Modelo y assets. Usamos Chatterbox V3 + el Language Pack es-MX (LatAm), un finetune del
-# T3 (gobierna pronunciación/acento) para que el acento salga latino y no "españolete". El
-# T3 LatAm vive en LATAM_REPO; el resto de assets V3, en el repo base.
-# ──────────────────────────────────────────────────────────────────────────────
-T3_MODEL = "v3"  # checkpoint multilingüe V3 (solo en la versión de git, no en PyPI 0.1.7)
-USAR_LATAM = True  # False = V3 general (23 idiomas), para comparar
-LATAM_REPO = "ResembleAI/Chatterbox-Multilingual-es-mx-latam"
+# Usamos Chatterbox V3 + el Language Pack es-MX (LatAm), con un finetune del T3 (pronunciación/acento).
+LATAM_REPO = "ResembleAI/Chatterbox-Multilingual-es-mx-latam"  # T3 finetuneado, s3gen
 LATAM_T3_FILE = "t3_es_mx_latam.safetensors"
 LATAM_S3GEN_FILE = "s3gen_v3.pt"  # decoder V3 del pack
-BASE_REPO = "ResembleAI/chatterbox"
+BASE_REPO = "ResembleAI/chatterbox"  # ve, conds, grapheme
 
-# Parámetros de Chatterbox a tunear (defaults de la función de bajo nivel synthesize()):
-#   cfg_weight: apego al locutor/prompt base; bajarlo hacia 0 afloja el acento "españolete".
-#   exaggeration: exageración/emoción de la voz (0.5 = neutro).
-CFG_WEIGHT = 0.0
-EXAGGERATION = 0.7
-
-# Dial de exageración (1-3, el mismo que gobierna el texto) -> parámetros de Chatterbox: a
-# más exageración, más `exaggeration` y menos `cfg_weight` (la doc recomienda bajar
-# cfg_weight al subir la expresividad). Editá acá si el nivel 3 "suelta el ritmo".
+# Dial de exageración (mismo del texto)
+# Controla la expresividad de la voz. La doc de Chatterbox recomienda bajar cfg_weight al subir exaggeration.
 EXAGERACION_A_PARAMS = {
     1: {"exaggeration": 0.5,  "cfg_weight": 0.5},
     2: {"exaggeration": 0.75, "cfg_weight": 0.25},
     3: {"exaggeration": 1.0,  "cfg_weight": 0.0},
 }
 
-# Audio de referencia con la voz a clonar (limpio, varios segundos). Relativo a la raíz.
-VOICE_REFERENCE = config.PROJECT_ROOT / "data" / "voice_reference.aif"
-
-# Device del TTS. "auto" = CUDA si hay, si no CPU (en Mac no usamos MPS: ver _device_tts).
-TTS_DEVICE = os.getenv("TTS_DEVICE", "auto")
+VOICE_REFERENCE = config.PROJECT_ROOT / "data" / "voice_reference.wav"  # Audio de referencia con la voz a clonar
 
 
 class SintesisError(Exception):
-    """Falla al sintetizar la voz (audio/dispositivo/modelo).
+    """Falla al sintetizar la voz.
 
-    Distinta de TransformacionError a propósito: separa 'falló la voz' de 'falló el texto'.
-    Cuando salta, el usuario ya tiene su texto paisa (la voz es el último eslabón), así que
-    el orquestador puede mostrar el texto igual y solo avisar.
+    Cuando salta, el usuario ya tiene su texto paisa.
     """
-
-
-def resolve_device(value: str) -> str:
-    """Traduce un device (posiblemente "auto") a uno concreto.
-
-    "auto" -> "cuda" si hay GPU NVIDIA; si no "mps" en Apple Silicon; si no "cpu". Cualquier
-    otro valor se devuelve tal cual (permite forzarlo por env var).
-    """
-    if value != "auto":
-        return value
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 def _device_tts() -> str:
     """Device para Chatterbox. En Apple Silicon fuerza CPU a propósito.
 
-    torchaudio tiene un bug al resamplear sobre MPS ("Output channels > 65536") que hace
-    inservible a Chatterbox en ese backend; como el pipeline no es tiempo real, en Mac CPU
-    basta. Con GPU NVIDIA, 'auto' da 'cuda' sin problema.
+    torchaudio tiene un bug al resamplear sobre MPS; el pipeline no es tiempo real, CPU basta.
     """
-    device = resolve_device(TTS_DEVICE)
-    if device == "mps":
-        print("ℹ️  Apple Silicon: uso CPU para el TTS (MPS no soporta un op de Chatterbox).")
-        return "cpu"
-    return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        print("ℹ️ CPU para el TTS (Chatterbox no funciona con MPS).")
+    return "cpu"
 
 
 def _preparar_ckpt_latam() -> Path:
     """Arma un directorio con los assets del Language Pack LatAm y lo devuelve.
 
-    from_local() espera todos los pesos en UNA carpeta, pero el pack vive repartido: el T3
-    finetuneado (lo único específico de LatAm) en LATAM_REPO, y el resto de assets V3 en el
-    repo base. Bajamos cada archivo (hf_hub_download ya los cachea) y los enlazamos por
-    symlink en una carpeta local, sin duplicar pesos.
+    from_local() espera los pesos en una carpeta, pero el pack está repartido:
+    ve/conds/grapheme en BASE_REPO, el T3 finetuneado (específico de LatAm) y el
+    s3gen_v3 están en LATAM_REPO. Bajamos cada archivo y los enlazamos por symlink.
     """
-    from huggingface_hub import hf_hub_download
+    ruta_pack_ensamblado = config.PROJECT_ROOT / ".cache" / "chatterbox_es_latam"
+    ruta_pack_ensamblado.mkdir(parents=True, exist_ok=True)
+    ruta_s3gen = ruta_pack_ensamblado / "s3gen.pt"
 
-    token = config.HF_TOKEN  # None si no está; los repos son públicos igualmente
-    ensamblado = config.PROJECT_ROOT / ".cache" / "chatterbox_es_latam"
-    ensamblado.mkdir(parents=True, exist_ok=True)
-
-    def _enlazar(repo: str, archivo: str, nombre_destino: str) -> None:
-        origen = hf_hub_download(repo_id=repo, filename=archivo, repo_type="model", token=token)
-        destino = ensamblado / nombre_destino
-        if destino.exists() or destino.is_symlink():
-            destino.unlink()
-        destino.symlink_to(origen)
-        print(f"   {nombre_destino:38s} <- {repo}/{archivo}")
-
-    print("Ensamblando assets del Language Pack LatAm:")
-    _enlazar(BASE_REPO, "ve.pt", "ve.pt")
-    _enlazar(BASE_REPO, "grapheme_mtl_merged_expanded_v1.json", "grapheme_mtl_merged_expanded_v1.json")
-    _enlazar(BASE_REPO, "conds.pt", "conds.pt")
-    _enlazar(LATAM_REPO, LATAM_T3_FILE, LATAM_T3_FILE)
-
-    # Decoder: el s3gen_v3.pt del pack es el decoder correcto, pero le faltan 2 buffers del
-    # tokenizer (mel filterbank + ventana STFT) que from_local() exige en modo estricto. Son
-    # DSP determinista (Whisper/s3tokenizer: sr 16k, n_fft 400, 128 mels, ventana Hann), así
-    # que los CALCULAMOS —verificado idénticos a los del s3gen base con torch.allclose— en vez
-    # de bajar el s3gen base (1 GB) solo para extraerlos. Guardamos el combinado UNA vez. OJO:
-    # el archivo DEBE llamarse "s3gen.pt" (from_local lo tiene hardcodeado).
-    destino_s3gen = ensamblado / "s3gen.pt"
-    if destino_s3gen.is_symlink():
-        destino_s3gen.unlink()  # limpia un symlink de un intento anterior
-    if not destino_s3gen.exists():
+    if not ruta_s3gen.exists():
+        from huggingface_hub import hf_hub_download
         import librosa
 
+        token = config.HF_TOKEN  # None si no está; los repos son públicos igualmente
+
+        def _enlazar(repo: str, archivo: str) -> None:
+            origen = hf_hub_download(repo_id=repo, filename=archivo, repo_type="model", token=token)
+            destino = ruta_pack_ensamblado / archivo
+            if destino.exists() or destino.is_symlink():
+                destino.unlink()
+            destino.symlink_to(origen)
+
+        _enlazar(BASE_REPO, "ve.pt")
+        _enlazar(BASE_REPO, "grapheme_mtl_merged_expanded_v1.json")
+        _enlazar(BASE_REPO, "conds.pt")
+        _enlazar(LATAM_REPO, LATAM_T3_FILE)
+
+        # Al decoder s3gen_v3.pt le faltan 2 buffers del tokenizer (mel filterbank + ventana STFT)
+        # que from_local() exige; son DSP deterministas, se calculan y se guarda el combinado.
         v3_s3gen = hf_hub_download(repo_id=LATAM_REPO, filename=LATAM_S3GEN_FILE, repo_type="model", token=token)
         sd_v3 = torch.load(v3_s3gen, map_location="cpu", weights_only=True)
         sd_v3["tokenizer._mel_filters"] = torch.from_numpy(librosa.filters.mel(sr=16000, n_fft=400, n_mels=128)).float()
         sd_v3["tokenizer.window"] = torch.hann_window(400)
-        torch.save(sd_v3, destino_s3gen)
-        print(f"   s3gen.pt                               <- {LATAM_REPO}/{LATAM_S3GEN_FILE} (+2 buffers calculados)")
-    else:
-        print("   s3gen.pt                               <- (combinado V3, ya cacheado)")
+        torch.save(sd_v3, ruta_s3gen)
 
-    return ensamblado
+        # Podamos el source s3gen_v3 (~1 GB): ya quedó en el combinado.
+        fuente = Path(v3_s3gen)
+        blob = fuente.resolve()
+        fuente.unlink()
+        blob.unlink(missing_ok=True)
 
-
-def _verificar_modelo_latam(modelo: ChatterboxMultilingualTTS) -> None:
-    """Sanity check: que sea la clase multilingüe, que 'es' esté soportado, y que el T3 sea
-    el del checkpoint LatAm (text_emb de forma (2454, 1024))."""
-    assert isinstance(modelo, ChatterboxMultilingualTTS), "No es ChatterboxMultilingualTTS"
-    idiomas = modelo.get_supported_languages()
-    assert "es" in idiomas, f"'es' no está soportado: {sorted(idiomas)[:8]}..."
-
-    detalle = ""
-    try:
-        forma = tuple(modelo.t3.text_emb.weight.shape)
-        detalle = f" | T3 text_emb={forma} (esperado (2454, 1024))"
-    except Exception:
-        pass
-    print(f"✅ Verificación: modelo multilingüe OK, 'es' soportado{detalle}")
+    return ruta_pack_ensamblado
 
 
 _tts_lock = threading.Lock()
 _tts_cache: dict[str, ChatterboxMultilingualTTS] = {}
 
 
-def _get_tts(device: str) -> ChatterboxMultilingualTTS:
-    """Carga el modelo Chatterbox una sola vez (cacheado por device) y lo reusa.
+def warm_up() -> None:
+    """Precarga el TTS en un hilo daemon (no bloquea), para que esté listo al primer uso.
 
-    Es lazy: no se carga hasta el primer uso (en la práctica lo dispara el warm-up al
-    arrancar). Usa un lock con doble chequeo en vez de @lru_cache para que el warm-up (que
-    carga en un hilo aparte) y un request concurrente NO inicien dos cargas a la vez
-    (~6 GB -> OOM): el primero que entra carga; los demás esperan y reusan.
+    El lock en _get_tts evita que este hilo y el primer request inicien dos cargas a la vez.
     """
-    if device in _tts_cache:
+    threading.Thread(target=lambda: _get_tts(_device_tts()), daemon=True).start()
+
+
+def _get_tts(device: str) -> ChatterboxMultilingualTTS:
+    """Carga el modelo Chatterbox una sola vez (cacheado) y lo reusa.
+
+    Es lazy, pero warm_up() lo precarga al arrancar.
+    Usa un lock con doble chequeo (en vez de @lru_cache) para evitar la condición de carrera
+    entre el warm-up y un request concurrente.
+    """
+    if device in _tts_cache:  # si ya está cargado, evita el costo de pedir el lock
         return _tts_cache[device]
     with _tts_lock:
         if device in _tts_cache:  # lo cargó otro hilo mientras esperábamos el lock
             return _tts_cache[device]
-        if USAR_LATAM:
-            print(f"Cargando Chatterbox V3 + Language Pack es-MX (LatAm) en '{device}' (puede tardar)...")
-            ckpt_dir = _preparar_ckpt_latam()
-            modelo = ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=LATAM_T3_FILE)
-            _verificar_modelo_latam(modelo)
-        else:
-            print(f"Cargando Chatterbox Multilingual {T3_MODEL.upper()} (general) en '{device}' (puede tardar)...")
-            modelo = ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model=T3_MODEL)
+        print(f"Cargando Chatterbox V3 + Language Pack es-MX (LatAm) en '{device}'...")
+        ckpt_dir = _preparar_ckpt_latam()
+        modelo = ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=LATAM_T3_FILE)
         _tts_cache[device] = modelo
         return modelo
 
 
-def synthesize(
-    texto: str,
-    ruta_salida: str | Path | None = None,
-    idioma: str = "es",
-    exaggeration: float = EXAGGERATION,
-    cfg_weight: float = CFG_WEIGHT,
-) -> str:
-    """Síntesis de bajo nivel: recibe los floats crudos de Chatterbox (para tunear a mano).
+def sintetizar(texto: str, ruta_salida: str, exageracion: int = 2) -> str:
+    """Sintetiza `texto` con la voz clonada, guarda el .wav y devuelve la ruta.
 
-    El pipeline usa sintetizar(), que traduce el dial de exageración (1-3) a estos floats.
-    El parámetro se llama `exaggeration` (como Chatterbox) para no confundirlo con el dial
-    entero `exageracion`.
-
-    Returns:
-        La ruta del audio escrito.
+    `exageracion` es el mismo dial del texto; mapea a los floats de Chatterbox (exaggeration/cfg_weight).
+    Al fallar levanta SintesisError.
     """
     if not VOICE_REFERENCE.exists():
-        raise FileNotFoundError(
-            f"No encuentro tu audio de referencia en '{VOICE_REFERENCE}'. "
-            "Graba un audio limpio de tu voz (varios segundos, sin ruido) y guárdalo ahí."
-        )
-
-    model = _get_tts(_device_tts())
-    audio = model.generate(
-        texto,
-        language_id=idioma,
-        audio_prompt_path=str(VOICE_REFERENCE),
-        exaggeration=exaggeration,
-        cfg_weight=cfg_weight,
-    )
-
-    salida = Path(ruta_salida if ruta_salida is not None else config.OUTPUT_DIR)
-    salida.parent.mkdir(parents=True, exist_ok=True)
-    ta.save(str(salida), audio, model.sr)  # model.sr = sample rate propio del modelo
-    print(f"Audio escrito en: {salida}")
-    return str(salida)
-
-
-def _params_por_exageracion(exageracion: int) -> dict:
-    """Dial de exageración (1-3) -> parámetros de Chatterbox. Fuera de rango cae al nivel 2."""
-    return EXAGERACION_A_PARAMS.get(exageracion, EXAGERACION_A_PARAMS[2])
-
-
-def sintetizar(texto: str, ruta_salida: str, exageracion: int = 2) -> str:
-    """Contrato del TTS para el PIPELINE: sintetiza `texto`, guarda el .wav y devuelve la ruta.
-
-    `exageracion` es el mismo dial (1-3) del texto; acá gobierna también la voz. Cualquier
-    fallo se envuelve en SintesisError (distinta de TransformacionError) para que el
-    orquestador distinga 'falló la voz' de 'falló el texto'.
-    """
-    p = _params_por_exageracion(exageracion)
+        raise SintesisError(f"No existe el audio de referencia '{VOICE_REFERENCE}'.")
+    params = EXAGERACION_A_PARAMS.get(exageracion, EXAGERACION_A_PARAMS[2])
     try:
-        return synthesize(texto, ruta_salida, exaggeration=p["exaggeration"], cfg_weight=p["cfg_weight"])
+        model = _get_tts(_device_tts())
+        audio = model.generate(texto, language_id="es", audio_prompt_path=str(VOICE_REFERENCE), **params)
+        salida = Path(ruta_salida)
+        salida.parent.mkdir(parents=True, exist_ok=True)
+        ta.save(str(salida), audio, model.sr)  # model.sr = sample rate propio del modelo
+        print(f"Audio escrito en: {salida}")
+        return str(salida)
     except Exception as e:
         raise SintesisError(f"No se pudo sintetizar la voz: {e}") from e
 
 
-# Prueba manual:  uv run python -m a_lo_paisa.synthesize
-# (Requiere data/voice_reference.aif; la primera vez descarga los pesos de Chatterbox.)
+# Prueba independiente:  uv run python -m a_lo_paisa.synthesize
 if __name__ == "__main__":
-    texto_prueba = "Ey parcero, ¿bien o qué? Esto es una prueba de mi voz clonada."
-    destino = config.PROJECT_ROOT / "outputs" / "prueba_tts_latam.wav"
+    texto_prueba = "¡Hágale pues mijo, vení ligerito, esto es una berraquera!"
+    destino = config.PROJECT_ROOT / "outputs" / "tts_test.wav"
     print(f"Sintetizando texto de prueba en: {destino}")
-    synthesize(texto_prueba, str(destino))
+    sintetizar(texto_prueba, str(destino))

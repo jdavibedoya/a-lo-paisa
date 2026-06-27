@@ -3,15 +3,15 @@
     "version": "1.2.0",
     "descripcion": "Glosario de jerga paisa (Antioquia, Colombia).",
     "campos": {
-      "neutro": "Concepto o función en español neutro.",
-      "paisa": "Lista de equivalentes paisa; cada uno con 't' (el término) e 'exa' (exageración).",
+      "neutro": "Palabra o expresión en español neutro.",
+      "paisa": "Lista de equivalentes paisa; cada uno con 't' (el término) y 'exa' (exageración).",
       "ejemplos": "Ejemplos de uso.",
       "notas": "Definiciones, otros sentidos o advertencias de uso."
     },
     "escala_exageracion": {
-      "1": "Suave. Casi neutro (p. ej. 'socio', 'plata').",
-      "2": "Cotidiano. Claramente paisa pero de uso diario (p. ej. 'parce', 'camellar').",
-      "3": "Recargado. Marcado, montañero o parlache fuerte (p. ej. 'una berraquera', '¡Ave María, pues!')."
+      "1": "Suave. Casi neutro.",
+      "2": "Cotidiano. Claramente paisa pero de uso diario.",
+      "3": "Recargado. Marcado, montañero o parlache fuerte."
     }
   },
   "entries": [

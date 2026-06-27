@@ -1,111 +1,122 @@
 ---
 title: A lo Paisa
-emoji: 🎙️
+emoji: ⛰️🫓
 colorFrom: green
-colorTo: yellow
+colorTo: white
 sdk: docker
 app_port: 7860
 pinned: false
-short_description: Tu voz, pero hablando a lo paisa de Antioquia.
+short_description: Voice pipeline with RAG: STT → Paisa transformation → TTS with cloned voice.
 ---
 
-# A lo Paisa 🎙️
+# ⛰️🫓 A lo Paisa
+> Voice-to-Voice Pipeline for Antioquian Spanish
 
-Pipeline de voz (no en tiempo real) que **re-dice un audio en español paisa de Antioquia,
-con tu voz clonada**:
+[![Hugging Face Spaces](https://img.shields.io/badge/HF-A_lo_Paisa-FFD21E?logo=huggingface&logoColor=black)](REEMPLAZAR_CON_LINK_DE_HUGGINGFACE)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-EE4C2C?logo=pytorch&logoColor=white)
+![Google GenAI](https://img.shields.io/badge/LLM-Google_GenAI-4285F4?logo=google&logoColor=white)
+![Gradio](https://img.shields.io/badge/UI-Gradio_6.8-FF7C00?logo=gradio&logoColor=white)
+![Faster Whisper](https://img.shields.io/badge/STT-Faster_Whisper-10A37F)
+![Chatterbox](https://img.shields.io/badge/TTS-Chatterbox_V3-000000)
+![uv](https://img.shields.io/badge/Manager-uv-261230)
 
-```
-audio → STT → (normalización a español, si hace falta) → reescritura a paisa (RAG) → TTS voz clonada → audio
-```
+An end-to-end voice pipeline that transforms speech audio into Paisa Spanish (Antioquia, Colombia) using a cloned voice:
 
-Corre de punta a punta (voz a voz), con UI web (Gradio) y empaquetado para **Hugging Face
-Spaces con Docker** (CPU).
+<div align="center">
+  <figure>
+    <img src="assets/architecture_diagram.webp" alt="A lo Paisa - Architecture Workflow" width="100%">
+    <figcaption>
+      <b>Architecture Workflow</b><br>
+      <small>Illustrated with ChatGPT</small>
+    </figcaption>
+  </figure>
+</div>
 
-## Cómo funciona
+| <div style="width: 175px">Dials</div> | Input | Output |
+| :--- | :--- | :--- |
+| *Idioma:* `español`<br>*Exageración:* `2`<br>*Registro:* `urbano` | [▶️ Audio](LINK_RAW_GITHUB)<br><small>"Hoy es un día tranquilo en la montaña con algo de lluvia y un cielo gris me gusta correr temprano y escuchar música"</small> | [▶️ Audio](LINK_RAW_GITHUB)<br><small>"Hoy está el día como tranquilito por acá en la montaña, con una agüita y el cielo medio gris. A mí me gusta, pues, correr bien tempranito y escuchar música."</small> |
+| *Idioma:* `inglés`<br>*Exageración:* `2`<br>*Registro:* `montañero` | [▶️ Audio](LINK_RAW_GITHUB)<br><small>"She can scoop these things into three red bags and we will go meet her Wednesday at the train station."</small> | [▶️ Audio](LINK_RAW_GITHUB)<br>"<small>Ella puede meter esas cositas en tres bolsas rojas y nos pillamos con ella el miércoles en la estación del tren, ¿sí o qué?"</small> |
 
-El usuario fija **tres diales** antes de hablar:
+---
+## How it Works
+### Dials
+- *Idioma de entrada:* `español` | `inglés` | `otro`
+- *Exageración:* `1` (suave) | `2` (cotidiano) | `3` (recargado)
+- *Registro:* `urbano` (parlache) | `montañero` (rural / tradicional)
 
-- **Idioma de entrada** — `español` (whisper fuerza `es`, no se normaliza) · `inglés`
-  (fuerza `en`, se normaliza a español) · `otro` (autodetecta y normaliza).
-- **Exageración** `1–3` — gobierna **el texto Y la voz** (a más exageración, más jerga y
-  más expresividad).
-- **Registro** — `urbano` (parlache de Medellín) · `montañero` (rural/tradicional).
+### Pipeline Stages
+1. **Input Voice**
+2. **STT (Speech-to-Text):** Automatically detects the language if set to `otro`.
+3. **(Translation):** Handled by an LLM (triggered only if the *Idioma de entrada* dial is `inglés` or `otro`).
+4. **Paisa Rewriting:** An LLM rewrites the text, enriched by **semantic RAG** against a curated glossary (Embeddings + Cosine Similarity). This stage is modulated by the *Exageración* and *Registro* dials.
+5. **TTS (Text-to-Speech):** Synthesizes the text with a cloned voice. The *Exageración* dial influences the model's prosodic variance and acoustic expressiveness.
+6. **Output Voice**
 
-Las etapas:
-
-1. **STT** con faster-whisper (int8, CPU), dirigido por el dial de idioma.
-2. **Normalización** a español neutro (Gemini) — solo si el dial es `inglés`/`otro`.
-3. **Reescritura a paisa** con Gemini, anclada por **RAG semántico** sobre un glosario
-   curado (embeddings + similitud coseno).
-4. **TTS** con voz clonada: Chatterbox V3 + Language Pack es-MX (LatAm).
-
-Un **"portero"** garantiza que si el texto falla, **nunca se sintetiza un error**.
-
-## Requisitos
-
-- [uv](https://docs.astral.sh/uv/) como gestor de paquetes · Python 3.11 (fijado en
-  `.python-version`; uv lo instala solo).
-- Una **API key de Gemini** (capa gratuita): la usan la normalización, la reescritura y los
-  embeddings (el STT no la necesita).
-- Un audio de **tu voz** en `data/voice_reference.aif` (para clonar el timbre).
-
-## Puesta en marcha
-
+## Setup & Installation
 ```bash
-uv python install 3.11                       # uv gestiona el Python; no toca el del sistema
-uv sync                                      # entorno + deps (la 1ª vez baja torch/Chatterbox)
-cp .env.example .env                         # rellená GEMINI_API_KEY (HF_TOKEN opcional)
-uv run python scripts/build_embeddings.py    # índice del glosario (1 vez, y cada vez que lo edites)
+uv python install 3.11                       # Python 3.11 for the virtual environment
+uv sync                                      # Create venv and install dependencies
+cp .env.example .env                         # Setup your credentials
 ```
 
-## Uso
+## Usage
+### [Web UI (Gradio) - Hugging Face Spaces](REEMPLAZAR_CON_LINK_DE_HUGGINGFACE)
 
-**Interfaz web** (Gradio):
+<div align="center">
+  <img src="assets/gradio_ui.webp" alt="Gradio Web UI Screenshot" width="600">
+</div>
 
+### Web UI (Gradio) - Local:
 ```bash
-uv run python app.py        # abre en http://localhost:7860
+uv run python app.py        # Runs on http://localhost:7860
 ```
 
-También hay un **CLI** del pipeline completo (`scripts/cli.py`) y cada **etapa** corre como
-módulo (`python -m a_lo_paisa.transcribe`, etc.). Los detalles de uso (flags, ejemplos)
-están en el docstring/`--help` de cada archivo.
+### CLI:
+```bash
+uv run python scripts/cli.py --audio input_voice.wav --idioma español
+```
 
-## Estructura
+---
+## Architectural Decisions
+- **Pre-processing:** A speech enhancement model for background noise and reverberation was initially considered. However, testing revealed that `faster-whisper` is sufficiently robust on its own.
+- **Workflow over Agentic Loop:** A/B testing showed that autonomous processes (self-critique loops or autonomous tool-calling for RAG) did not yield tangible improvements. A sequential workflow was chosen for reliability and lower latency.
+- **Data Curation:** Informed by known dictionaries (e.g. Julio C. Jaramillo R., Medellín.travel) and social polls, this compact, manually curated glossary consistently improves rewriting performance during testing.
+- **Semantic RAG:** Retrieval relies on vector embeddings rather than strict keyword lookups to ensure accurate contextual matching.
+- **Model Agnosticism:** Gemini was selected for its balance of performance, free-tier availability, and included embedding model. Still, the architecture is model-agnostic; testing another LLM only requires updating the `LLM_API_KEY` and the `provider.py` module.
+- **Asymmetric Temperatures:** The translation step runs at `0.2` (prioritizing deterministic accuracy), while the Paisa transformation step runs at `0.7` (encouraging creative and expressive phrasing).
+- **TTS Package:** Using Chatterbox V3 for its Latin American Spanish capabilities. Since this version is currently unavailable on PyPI, the dependency is pulled directly from the Resemble GitHub repository.
+- **Hardware Targeting:** Designed to run efficiently on CPU-only Hugging Face Free Spaces. The system automatically detects and leverages CUDA if available. Apple Silicon (MPS) falls back to CPU due to `torchaudio` constraints in the TTS module.
+- **Cold Start Optimization:** Model weights are baked directly into the Docker image to eliminate downloads on runtime. Additionally, a background thread warms up the TTS model at startup to reduce first-request latency.
 
-| Ruta | Qué hace |
-|------|----------|
-| `src/a_lo_paisa/config.py` | Bootstrap del entorno: `.env`, secretos, rutas, `require()`. |
-| `src/a_lo_paisa/llm.py` | Cliente Gemini + IDs de modelo + `TransformacionError`. |
-| `src/a_lo_paisa/transcribe.py` | STT con faster-whisper (int8, CPU). |
-| `src/a_lo_paisa/retrieve.py` | RAG: glosario + embeddings + `lookup_paisa()`. |
-| `src/a_lo_paisa/paisa_transform.py` | Reescritura a paisa (Gemini + RAG) + normalización a español. |
-| `src/a_lo_paisa/synthesize.py` | TTS con voz clonada (Chatterbox V3 + Language Pack es-MX). |
-| `src/a_lo_paisa/pipeline.py` | Orquestación reusable sin UI (la comparten CLI y app). |
-| `scripts/build_embeddings.py` | (Offline) construye el índice de embeddings del glosario. |
-| `scripts/cli.py` | Entrypoint CLI del pipeline completo. |
-| `scripts/prefetch.py` | (Build) hornea los modelos en la imagen. |
-| `app.py` | UI web (Gradio). |
-| `Dockerfile` | Imagen del Space (uv, CPU). |
-| `data/paisa_glossary.json` | Glosario paisa curado (neutro → términos con exageración, ejemplos, notas). |
+## Models
+| Stage | Model |
+|-------|-------|
+| **STT** | faster-whisper `small`, int8 |
+| **Translation / Rewriting** | Gemini `2.5-flash` |
+| **Embeddings (RAG)** | `gemini-embedding-001`, dim 768 |
+| **TTS** | Chatterbox V3 (Multilingual) + es-MX Language Pack |
 
-## Decisiones de diseño
+## Project Structure
+Each stage can also be executed as a standalone module. Check the docstrings or run `--help` on individual files for details.
 
-- **RAG semántico, no léxico.** La búsqueda por significado recupera "amigo"/"dinero" desde
-  "mi compañero anda sin billete", cosa que el match léxico no logra. (Lo verifiqué con un
-  experimento comparando ambos enfoques.)
-- **Auto-reflexión: probada y descartada.** Construí un paso de auto-crítica/corrección, lo
-  A/B-testeé y validé el crítico; el single-pass ya cumplía las reglas, así que no shipeé la
-  complejidad extra.
-- **Dispositivos.** STT y TTS en CPU (el Space es CPU; con `"auto"` tomarían una GPU NVIDIA
-  si la hubiera). En Apple Silicon el TTS va en CPU igual: MPS tiene un bug de torchaudio.
-- **Dos temperaturas.** Normalización `0.2` (traducción fiel, casi determinista);
-  transformación `0.7` (paisa con chispa pero controlada).
+| Path | Purpose |
+|------|---------|
+| `src/a_lo_paisa/config.py` | Environment bootstrap and configuration. |
+| `src/a_lo_paisa/provider.py` | Model IDs and LLM client setup. |
+| `src/a_lo_paisa/transcribe.py` | STT transcription. |
+| `src/a_lo_paisa/retrieve.py` | RAG implementation. |
+| `src/a_lo_paisa/paisa_transform.py` | LLM translation + LLM Paisa rewriting. |
+| `src/a_lo_paisa/synthesize.py` | TTS synthesis with voice cloning. |
+| `src/a_lo_paisa/pipeline.py` | Core end-to-end orchestrator. |
+| `scripts/build_embeddings.py` | (Offline) Generates vector embeddings. |
+| `scripts/cli.py` | Command-line entrypoint. |
+| `scripts/prefetch.py` | Bakes model weights into the Docker image. |
+| `app.py` | Gradio Web UI. |
+| `Dockerfile` | Hugging Face Space image definition. |
+| `data/paisa_glossary.json` | Curated Paisa dataset. |
 
-## Modelos
+---
+**Note on language:** ode comments and docstrings are in **Spanish**.
 
-| Etapa | Modelo |
-|-------|--------|
-| STT | faster-whisper `small`, int8 |
-| Normalización / reescritura | Gemini `2.5-flash` |
-| Embeddings (RAG) | `gemini-embedding-001`, dim 768 |
-| TTS | Chatterbox V3 (multilingüe) + Language Pack es-MX (LatAm) |
+*Developed by [David Bedoya](https://github.com/jdavibedoya)*

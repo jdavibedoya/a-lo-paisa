@@ -5,28 +5,24 @@ más rápido y liviano en CPU. La cuantización int8 baja memoria y acelera en C
 pérdida de precisión despreciable para transcribir.
 """
 
-import os
 from functools import lru_cache
 
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel, download_model
 
-# config se importa por su EFECTO (ejecuta load_dotenv), para que las env vars de abajo
-# vean el .env. No se usa directamente, de ahí el noqa.
-from a_lo_paisa import config  # noqa: F401
-
-# Perillas del STT (overrideables por env var; ver .env.example).
-#   MODEL_SIZE: tiny < base < small < medium < large-v3 (más grande = más preciso/lento).
-#   DEVICE: "auto" = ctranslate2 elige solo (CPU sin GPU, CUDA si la hay), sin torch.
-#   COMPUTE_TYPE: "int8" = cuantización ligera para CPU.
-STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "small")
-STT_DEVICE = os.getenv("STT_DEVICE", "auto")
-STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")
+STT_MODEL_SIZE = "small"    # tiny < base < small < medium < large-v3.
+STT_DEVICE = "auto"         # ctranslate2 elige solo (CPU sin GPU, CUDA si la hay), sin torch.
+STT_COMPUTE_TYPE = "int8"   # cuantización ligera para CPU.
 
 
 @lru_cache(maxsize=1)
-def _get_model(model_size: str, device: str, compute_type: str) -> WhisperModel:
-    """Carga el modelo una sola vez (cacheado por sus parámetros) y lo reusa."""
+def _get_stt(model_size: str, device: str, compute_type: str) -> WhisperModel:
+    """Carga el modelo una sola vez (cacheado) y lo reusa."""
     return WhisperModel(model_size, device=device, compute_type=compute_type)
+
+
+def _descargar_pesos(model_size: str) -> None:
+    """Baja los pesos del modelo a la cache, sin instanciarlo (para hornear la imagen Docker)."""
+    download_model(model_size)
 
 
 def transcribir(ruta_audio: str, idioma_codigo: str | None) -> tuple[str, str, float]:
@@ -34,30 +30,40 @@ def transcribir(ruta_audio: str, idioma_codigo: str | None) -> tuple[str, str, f
 
     Args:
         ruta_audio: archivo de audio (wav, mp3, m4a, ogg...; whisper usa ffmpeg debajo).
-        idioma_codigo: "es"/"en" para FORZAR ese idioma; None para autodetectar ('otro').
+        idioma_codigo: "es"/"en" para forzar ese idioma; None para autodetectar ('otro').
 
     Returns:
-        (texto, idioma_detectado, confianza). La confianza es solo informativa; quien
-        decide el flujo es el dial, no ella.
+        (texto, idioma_detectado, confianza)
     """
-    model = _get_model(STT_MODEL_SIZE, STT_DEVICE, STT_COMPUTE_TYPE)
-    # segments es un generador perezoso (la transcripción ocurre al iterarlo). beam_size=5
-    # explora varias hipótesis y se queda con la mejor (buena calidad a coste moderado).
+    model = _get_stt(STT_MODEL_SIZE, STT_DEVICE, STT_COMPUTE_TYPE)
+    # segments es un generador perezoso (la transcripción final ocurre al iterarlo).
     segments, info = model.transcribe(ruta_audio, language=idioma_codigo, beam_size=5)
     texto = " ".join(segment.text.strip() for segment in segments).strip()
-    print(f"STT escuchó [{info.language} {info.language_probability:.2f}]: {texto}")
+    print(f"Transcripción STT [{info.language} {info.language_probability:.2f}]: {texto}")
     return texto, info.language, info.language_probability
 
 
-# Prueba manual:  uv run python -m a_lo_paisa.transcribe <ruta_audio>
+# Prueba independiente:  uv run python -m a_lo_paisa.transcribe <ruta_audio> <es|en|otro>
 if __name__ == "__main__":
+    import os
     import sys
 
-    if len(sys.argv) < 2:
-        print("Uso: python -m a_lo_paisa.transcribe <ruta_audio>")
+    CODIGOS = {"es", "en", "otro"}  # es/en fuerzan idioma; otro = autodetectar
+
+    if len(sys.argv) < 3:
+        print("Uso: uv run python -m a_lo_paisa.transcribe <ruta_audio> <es|en|otro>", file=sys.stderr)
         sys.exit(1)
-    ruta = sys.argv[1]
+
+    ruta, codigo = sys.argv[1], sys.argv[2]
+    if not os.path.isfile(ruta):
+        print(f"Error: no existe el archivo de audio '{ruta}'.", file=sys.stderr)
+        sys.exit(1)
+    if codigo not in CODIGOS:
+        print(f"Error: código de idioma inválido '{codigo}'. Usá es, en u otro.", file=sys.stderr)
+        sys.exit(1)
+
+    idioma_codigo = None if codigo == "otro" else codigo  # otro -> None (autodetectar)
     print(f"Transcribiendo: {ruta}")
-    texto, _idioma, _conf = transcribir(ruta, None)
+    texto, _idioma, _conf = transcribir(ruta, idioma_codigo)
     print("\n--- Transcripción ---")
     print(texto)

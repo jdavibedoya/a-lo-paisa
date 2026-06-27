@@ -1,24 +1,23 @@
 [project]
 name = "a-lo-paisa"
-version = "0.1.0"
-description = "Pipeline de voz: STT → reescritura a paisa antioqueño (RAG) → TTS con voz clonada."
+version = "1.0.0"
+description = "Pipeline de voz con RAG: STT → transformación a paisa → TTS con voz clonada."
 readme = "README.md"
 
 # Python 3.11: wheels estables para todo el stack y compatible con los pins de chatterbox.
 requires-python = ">=3.11,<3.12"
 
 dependencies = [
-    "faster-whisper>=1.0.0",  # STT (Whisper sobre CTranslate2; rápido y liviano en CPU)
     "python-dotenv>=1.0.0",   # carga el .env (lo usa config.py)
+    "faster-whisper>=1.0.0",  # STT (Whisper sobre CTranslate2; rápido y liviano en CPU)
     # chatterbox-tts: TTS multilingüe con clonación de voz. Fija pins DUROS (torch==2.6.0,
-    # numpy<2, transformers==5.2.0, gradio==6.8.0); los respetamos tal cual (en CPU no hace
-    # falta tocarlos). Se instala desde git: ver [tool.uv.sources].
+    # numpy<2, transformers==5.2.0, gradio==6.8.0).
     "chatterbox-tts",
+    "google-genai>=2.8.0",  # LLM (traducción, reescritura) + embeddings del RAG
+    "gradio>=6.8.0",        # UI web (app.py)
     # setuptools<81: resemble-perth (la marca de agua de chatterbox) importa pkg_resources,
     # que setuptools 81+ eliminó y uv no trae por defecto. Sin este pin, el TTS revienta.
     "setuptools<81",
-    "google-genai>=2.8.0",  # LLM (normalización, reescritura) + embeddings del RAG
-    "gradio>=6.8.0",        # UI web (app.py)
 ]
 
 # src layout: el código vive en src/a_lo_paisa, instalado en modo editable por Hatchling.
@@ -30,8 +29,7 @@ build-backend = "hatchling.build"
 packages = ["src/a_lo_paisa"]
 
 [tool.uv.sources]
-# chatterbox-tts desde git A PROPÓSITO: el checkpoint V3 (mejor español, base del Language
-# Pack es-MX) solo está en master; la 0.1.7 de PyPI es V2 y ni acepta t3_model="v3". El
-# commit queda fijo en uv.lock.
-# TODO: cuando V3 esté en PyPI, cambiar a una versión normal en [project.dependencies].
+# chatterbox-tts desde git: el checkpoint V3 (base del Language Pack es-MX) solo está en master,
+# la 0.1.7 de PyPI es V2 y no acepta t3_model="v3". El commit queda fijo en uv.lock.
+# TODO: cuando V3 esté en PyPI, cambiar en [project.dependencies].
 chatterbox-tts = { git = "https://github.com/resemble-ai/chatterbox.git" }

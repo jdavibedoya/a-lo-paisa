@@ -1,32 +1,21 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# .gitignore — qué NO debe subirse al repositorio.
+# .gitignore — qué NO se sube al repositorio.
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Secretos: el .env contiene tus claves reales. JAMÁS al repo.
-# (La plantilla .env.example sí se versiona, por eso no se ignora.)
-.env
-
-# Entorno virtual creado por uv. Es reconstruible con `uv sync`, no se versiona.
-.venv/
-
-# Bytecode y cachés de Python.
+# Entorno virtual, bytecode y cachés (reconstruibles)
+.venv
+.cache
 __pycache__/
 *.py[cod]
-*.egg-info/
 
-# Salidas generadas por el pipeline (audios sintetizados, transcripciones, etc.).
-/outputs/
+# Secretos. La plantilla .env.example sí se versiona.
+.env
 
-# Caché local de modelos (ensamblado de Chatterbox + descargas). Pesa GBs; se re-baja sola.
-.cache/
+# Material de archivo y salidas.
+archive
+outputs
 
-# Material de archivo: experimentos congelados + PDFs de diccionarios (terceros, con
-# copyright). No va al repo público; queda solo en local.
-archive/
-
-# Backups temporales (*.bak) que se generan al hacer cambios delicados.
-*.bak
-
-# Metadata de macOS (Finder) y config local de herramientas (Claude Code): no del proyecto.
+# Config local de herramientas (Claude Code), metadata del SO y backups.
 .DS_Store
 .claude/
+*.bak

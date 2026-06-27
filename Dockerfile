@@ -1,13 +1,12 @@
-# Imagen del Hugging Face Space (SDK docker, CPU). Usa uv + uv.lock para deps 100%
-# reproducibles, y HORNEA los modelos en la imagen (prefetch) para que el runtime no
-# descargue nada: cold-start rápido y sin re-bajar los pesos cuando el Space despierta.
+# Imagen del Hugging Face Space (sdk: docker, CPU). Usa uv + uv.lock para deps 100%
+# reproducibles, y hornea los modelos en la imagen (prefetch) para que el runtime no
+# los descargue: cold-start rápido, sin re-bajar los pesos cuando el Space despierta.
 
 # Imagen oficial de uv con Python 3.11 (Debian slim). Trae uv preinstalado.
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
-# git: chatterbox-tts y resemble-perth se instalan DESDE GitHub.
-RUN apt-get update && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+# git: chatterbox-tts y resemble-perth se instalan desde GitHub.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 # HF Spaces corre el contenedor como usuario NO-root (uid 1000).
 RUN useradd -m -u 1000 user
@@ -22,19 +21,19 @@ ENV GRADIO_SERVER_NAME=0.0.0.0 \
 
 WORKDIR /home/user/app
 
-# 1) Dependencias (capa cacheable: solo cambia si cambian los manifests).
+# 1) Instala las dependencias, pero aún no el proyecto.
+#    Evita reinstalar a menos que cambien manifiestos (pyproject.toml o uv.lock).
 COPY --chown=user pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
 
-# 2) Paquete + PREFETCH de los pesos (TTS + STT) en la imagen. Va ANTES de copiar el
-#    resto para que tweaks en app.py/data NO re-disparen la descarga de modelos.
+# 2) Instala el proyecto (src/) y pre-descarga los modelos (TTS + STT).
+#    Se hace antes de copiar la UI para que cambios en la UI/datos no re-disparen el bake.
 COPY --chown=user README.md ./
 COPY --chown=user src/ ./src/
-RUN uv sync --frozen
-COPY --chown=user scripts/prefetch.py ./scripts/prefetch.py
-RUN uv run python scripts/prefetch.py
+COPY --chown=user scripts/prefetch.py ./scripts/
+RUN uv sync --frozen && uv run python scripts/prefetch.py
 
-# 3) El resto del proyecto (app.py, data, scripts).
+# 3) Copia el resto del repositorio (app.py, data, etc.).
 COPY --chown=user . .
 
 EXPOSE 7860

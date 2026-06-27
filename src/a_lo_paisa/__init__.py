@@ -1,3 +1,5 @@
-"""Paquete a_lo_paisa: pipeline de voz STT → reescritura paisa → TTS con voz clonada."""
+"""Pipeline de voz con RAG: STT → transformación a paisa → TTS con voz clonada."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+__version__ = version("a-lo-paisa")
