@@ -20,7 +20,7 @@ short_description: "Voice pipeline with RAG: STT → Paisa transformation → TT
 ![Faster Whisper](https://img.shields.io/badge/STT-Faster_Whisper-10A37F)
 ![Chatterbox](https://img.shields.io/badge/TTS-Chatterbox_V3-000000)
 
-End-to-end voice pipeline that transforms speech audio into Paisa Spanish (Antioquia, Colombia) using a cloned voice:
+End-to-end voice pipeline transforming speech audio into Paisa Spanish (Antioquia, Colombia) with a cloned voice.
 
 <div align="center">
   <figure>
