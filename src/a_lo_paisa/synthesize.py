@@ -6,6 +6,7 @@ El audio generado incluye PerTh, una marca de agua invisible que lo identifica c
 """
 
 import threading
+from functools import cache
 from pathlib import Path
 
 import torch
@@ -38,6 +39,7 @@ class SintesisError(Exception):
     """
 
 
+@cache  # detección fija por proceso: el aviso de MPS se imprime una vez, no en cada síntesis.
 def _device_tts() -> str:
     """Device para Chatterbox. En Apple Silicon fuerza CPU a propósito.
 
@@ -100,14 +102,6 @@ _tts_lock = threading.Lock()
 _tts_cache: dict[str, ChatterboxMultilingualTTS] = {}
 
 
-def warm_up() -> None:
-    """Precarga el TTS en un hilo daemon (no bloquea), para que esté listo al primer uso.
-
-    El lock en _get_tts evita que este hilo y el primer request inicien dos cargas a la vez.
-    """
-    threading.Thread(target=lambda: _get_tts(_device_tts()), daemon=True).start()
-
-
 def _get_tts(device: str) -> ChatterboxMultilingualTTS:
     """Carga el modelo Chatterbox una sola vez (cacheado) y lo reusa.
 
@@ -125,6 +119,14 @@ def _get_tts(device: str) -> ChatterboxMultilingualTTS:
         modelo = ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=LATAM_T3_FILE)
         _tts_cache[device] = modelo
         return modelo
+
+
+def warm_up() -> None:
+    """Precarga el TTS en un hilo daemon (no bloquea), para que esté listo al primer uso.
+
+    El lock en _get_tts evita que este hilo y el primer request inicien dos cargas a la vez.
+    """
+    threading.Thread(target=lambda: _get_tts(_device_tts()), daemon=True).start()
 
 
 def sintetizar(texto: str, ruta_salida: str, exageracion: int = 2) -> str:

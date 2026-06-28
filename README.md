@@ -2,7 +2,7 @@
 title: A lo Paisa
 emoji: ⛰️🫓
 colorFrom: green
-colorTo: gray
+colorTo: white
 sdk: docker
 app_port: 7860
 pinned: false
@@ -38,8 +38,8 @@ End-to-end voice pipeline transforming speech audio into Paisa Spanish (Antioqui
 
 | Dials&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Input | Output |
 | :--- | :--- | :--- |
-| *Idioma:* `español`<br>*Exageración:* `2`<br>*Registro:* `urbano` | [▶️ Listen](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/spanish_input.wav)<br><small>"Hoy es un día tranquilo en la montaña con algo de lluvia y un cielo gris me gusta correr temprano y escuchar música"</small> | [▶️ Listen](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/spanish_output.wav)<br><small>"Hoy está el día como tranquilito por acá en la montaña, con una agüita y el cielo medio gris. A mí me gusta, pues, correr bien tempranito y escuchar música."</small> |
-| *Idioma:* `inglés`<br>*Exageración:* `2`<br>*Registro:* `montañero` | [▶️ Listen](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/english_input.wav)<br><small>"She can scoop these things into three red bags and we will go meet her Wednesday at the train station."</small> | [▶️ Listen](https://github.com/jdavibedoya/a-lo-paisa/raw/refs/heads/main/assets/examples/english_output.wav)<br><small>"Ella puede meter esas cositas en tres bolsas rojas y nos pillamos con ella el miércoles en la estación del tren, ¿sí o qué?"</small> |
+| *Idioma:* `español`<br>*Exageración:* `2`<br>*Registro:* `urbano` | [⬇️ Download](https://github.com/jdavibedoya/a-lo-paisa/releases/download/examples/spanish_input.wav)<br><small>"Hoy es un día tranquilo en la montaña con algo de lluvia y un cielo gris me gusta correr temprano y escuchar música"</small> | [⬇️ Download](https://github.com/jdavibedoya/a-lo-paisa/releases/download/examples/spanish_output.wav)<br><small>"Hoy está el día como tranquilito por acá en la montaña, con una agüita y el cielo medio gris. A mí me gusta, pues, correr bien tempranito y escuchar música."</small> |
+| *Idioma:* `inglés`<br>*Exageración:* `2`<br>*Registro:* `montañero` | [⬇️ Download](https://github.com/jdavibedoya/a-lo-paisa/releases/download/examples/english_input.wav)<br><small>"She can scoop these things into three red bags and we will go meet her Wednesday at the train station."</small> | [⬇️ Download](https://github.com/jdavibedoya/a-lo-paisa/releases/download/examples/english_output.wav)<br><small>"Ella puede meter esas cositas en tres bolsas rojas y nos pillamos con ella el miércoles en la estación del tren, ¿sí o qué?"</small> |
 
 ---
 ## How it Works
@@ -67,7 +67,7 @@ cp .env.example .env                         # Setup your credentials
 ### [Web UI (Gradio) - Hugging Face Spaces](https://huggingface.co/spaces/jdavibedoya/a-lo-paisa)
 
 <div align="center">
-  <img src="assets/gradio_ui.webp" alt="Gradio Web UI Screenshot" width="600">
+  <img src="assets/gradio_ui.webp" alt="Gradio Web UI Screenshot" width="100%">
 </div>
 
 ### Web UI (Gradio) - Local:
