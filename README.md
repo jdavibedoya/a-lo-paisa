@@ -2,7 +2,7 @@
 title: A lo Paisa
 emoji: ⛰️🫓
 colorFrom: green
-colorTo: white
+colorTo: gray
 sdk: docker
 app_port: 7860
 pinned: false
