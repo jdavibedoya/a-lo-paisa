@@ -34,11 +34,11 @@ FEW_SHOT = [
 
 
 def _formato_entrada(texto: str, exageracion: int, registro: str) -> str:
-    """Etiqueta una entrada como '[exageración N · registro R]\\n<texto>'.
+    """Etiqueta una entrada como '[exageración: E · registro: R]\\n<texto>'.
 
-    Esa etiqueta le dice al modelo qué nivel/registro aplicar.
+    Esa etiqueta le dice al modelo qué exageración/registro aplicar.
     """
-    return f"[exageración {exageracion} · registro {registro}]\n{texto}"
+    return f"[exageración: {exageracion} · registro: {registro}]\n{texto}"
 
 
 def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
@@ -66,8 +66,8 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
         Tu tarea es REESCRIBIR el texto del usuario en habla paisa natural.
         NO traduzcás palabra por palabra: reescribí la frase entera para que suene a como hablaría un paisa, conservando el mismo significado.
 
-        Cada texto viene ETIQUETADO así: [exageración N · registro R].
-        Aplicá ese nivel y ese registro.
+        Cada texto viene ETIQUETADO así: [exageración: E · registro: R].
+        Aplicá esa exageración y ese registro.
 
         REGLA INNEGOCIABLE — solo paisa de Antioquia:
         Usá únicamente jerga y entonación de Antioquia.
@@ -75,19 +75,19 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
         El voseo debe ser el antioqueño (vos vení, vos sabés), no el caleño ni el rioplatense.
         Si dudás de si algo es paisa, no lo usés.
 
-        NIVEL DE EXAGERACIÓN (1 a 3):
-        - Nivel 1 (SUTIL): español casi estándar, entendible para cualquier hispanohablante.
+        EXAGERACIÓN (1 a 3):
+        - 1 (SUTIL): español casi estándar, entendible para cualquier hispanohablante.
         Solo UN toque paisa (ocasionalmente un 'pues', un diminutivo, voseo).
         NADA de interjecciones fuertes ('¡Ave María!'), NADA de parlache marcado.
-        Ante la duda en nivel 1, contenete.
-        - Nivel 2 (COTIDIANO): claramente paisa pero de uso diario.
-        - Nivel 3 (RECARGADO): bien paisa, con interjecciones, parlache y sabor montañero.
+        Ante duda en la exageración 1, contenete.
+        - 2 (COTIDIANO): claramente paisa pero de uso diario.
+        - 3 (RECARGADO): bien paisa, con interjecciones, parlache y sabor montañero.
 
         REGISTRO:
-        - urbano: parlache urbano (ejemplos: nea, visaje, lucas, parche, paila, etc.).
         - montañero: rural/tradicional de pueblo (ejemplos: mijo, ome, berriondo, avispao, etc.).
+        - urbano: parlache urbano (ejemplos: nea, visaje, lucas, parche, paila, etc.).
 
-        RASGOS DE ESTILO (modulalos según el nivel):
+        RASGOS DE ESTILO (modulalos según la exageración):
         - Voseo: pronominal y VERBAL ('vos' en vez de 'tú', vení, mirá, contá, vos sabés).
         - Diminutivos afectivos (ahorita, momentico, tintico): usalos con MESURA. REGLA ESTRICTA: máximo UNO en cada frase para que el resultado no sea empalagoso.
         - La partícula 'pues' y muletillas paisas (vea pues, ome, ¿sí o qué?), intercaladas con naturalidad y CON SENTIDO, nunca amontonadas ni en cada frase.
@@ -98,10 +98,10 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
         - Conservá el significado y la intención original.
         NO agregués hechos, datos ni detalles que no estaban (si el texto no dice dónde ni con quién, no lo inventés).
         - Mantené el mismo tipo de mensaje: una pregunta sigue siendo pregunta, una orden sigue siendo orden.
-        - Que suene natural y con un toque jocoso cuando el nivel lo permita, NUNCA forzado ni caricaturesco.
+        - Que suene natural y con un toque jocoso cuando la exageración lo permita, NUNCA forzado ni caricaturesco.
 
         SOBRE LOS EJEMPLOS:
-        TODOS los ejemplos que veas son SOLO muestras del registro y del nivel; NO los copiés ni reutilicés sus frases o muletillas.
+        TODOS los ejemplos que veas son SOLO muestras de la exageración y del registro; NO los copiés ni reutilicés sus frases o muletillas.
         Cada texto es distinto: reescribilo según su propio contenido.
         Son referencia de estilo, no molde a calcar.
 
@@ -215,7 +215,7 @@ def reescribir_a_paisa(texto: str, exageracion: int = 2, registro: str = "monta�
     Args:
         texto: frase neutra a reescribir.
         exageracion: 1 suave | 2 cotidiano | 3 recargado.
-        registro: "urbano" | "montañero".
+        registro: "montañero" | "urbano".
 
     Raises:
         TransformacionError: si el LLM falla.
@@ -223,7 +223,7 @@ def reescribir_a_paisa(texto: str, exageracion: int = 2, registro: str = "monta�
     entradas = lookup_paisa(texto)  # contexto semánticamente relevante (RAG)
     contexto = formatear_contexto(entradas)  # - neutro: término1 (exageración 2), término2 (exageración 3) | notas: ... | ej: "frase1"; "frase2"
     system_prompt = construir_prompt_reescritura(glosario_contexto=contexto)
-    entrada_etiquetada = _formato_entrada(texto, exageracion, registro) # nivel/registro viajan etiquetados en el turno del usuario.
+    entrada_etiquetada = _formato_entrada(texto, exageracion, registro) # exageración/registro viajan etiquetados en el turno del usuario.
     return llamar_modelo(
         provider.get_client(), system_prompt, entrada_etiquetada,
         model=provider.MODEL, few_shot=FEW_SHOT, temperature=TEMP_REESCRITURA,
