@@ -64,7 +64,7 @@ cp .env.example .env                         # Setup your credentials
 ```
 
 ## Usage
-### [Web UI (Gradio) - Hugging Face Spaces](https://huggingface.co/spaces/jdavibedoya/a-lo-paisa)
+### [Web UI (Gradio) - Hugging Face Spaces](https://jdavibedoya-a-lo-paisa.hf.space)
 
 <div align="center">
   <img src="assets/gradio_ui.webp" alt="Gradio Web UI Screenshot" width="100%">
