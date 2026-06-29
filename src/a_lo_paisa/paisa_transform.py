@@ -42,7 +42,7 @@ def _formato_entrada(texto: str, exageracion: int, registro: str) -> str:
 
 
 def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
-    """Arma el system prompt de producción.
+    """Arma el system prompt de reescritura.
 
     El bloque del glosario solo se incluye si hay contexto recuperado.
     """
@@ -53,21 +53,21 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
             GLOSARIO PAISA DISPONIBLE:
             Es vocabulario de REFERENCIA, no una lista obligatoria ni exhaustiva.
             Usá los términos que encajen natural con el sentido de la frase.
-            Podés usar términos de exageración menor, pero evitá los de mayor.
+            Podés usar términos de "exageración" menor, pero evitá los de mayor.
             Ignorá los que no peguen, y sentite libre de usar OTRAS palabras o giros paisas que no estén acá.
             La lista NO limita tu vocabulario; solo te ofrece opciones:
             {GLOSARIO_CONTEXTO}
             """
         ).replace("{GLOSARIO_CONTEXTO}", glosario_contexto) # replace tras dedent: el contexto es multilínea (f-string antes de dedent rompería la indentación).
 
-    plantilla = textwrap.dedent(
+    system_prompt = textwrap.dedent(
         """\
         Sos un experto en el español paisa de Antioquia, Colombia (el de Medellín y sus pueblos).
         Tu tarea es REESCRIBIR el texto del usuario en habla paisa natural.
         NO traduzcás palabra por palabra: reescribí la frase entera para que suene a como hablaría un paisa, conservando el mismo significado.
 
         Cada texto viene ETIQUETADO así: [exageración: E · registro: R].
-        Aplicá esa exageración y ese registro.
+        Aplicá esa "exageración" y ese "registro".
 
         REGLA INNEGOCIABLE — solo paisa de Antioquia:
         Usá únicamente jerga y entonación de Antioquia.
@@ -79,18 +79,18 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
         - 1 (SUTIL): español casi estándar, entendible para cualquier hispanohablante.
         Solo UN toque paisa (ocasionalmente un 'pues', un diminutivo, voseo).
         NADA de interjecciones fuertes ('¡Ave María!'), NADA de parlache marcado.
-        Ante duda en la exageración 1, contenete.
+        Ante duda en la "exageración" 1, contenete.
         - 2 (COTIDIANO): claramente paisa pero de uso diario.
         - 3 (RECARGADO): bien paisa, con interjecciones, parlache y sabor montañero.
 
         REGISTRO:
-        - montañero: rural/tradicional de pueblo (ejemplos: mijo, ome, berriondo, avispao, etc.).
-        - urbano: parlache urbano (ejemplos: nea, visaje, lucas, parche, paila, etc.).
+        - montañero: rural/tradicional de pueblo (ejemplos: 'mijo', 'ome', 'berriondo', 'avispao', etc.).
+        - urbano: parlache urbano (ejemplos: 'nea', 'visaje', 'lucas', 'parche', 'paila', etc.).
 
-        RASGOS DE ESTILO (modulalos según la exageración):
-        - Voseo: pronominal y VERBAL ('vos' en vez de 'tú', vení, mirá, contá, vos sabés).
-        - Diminutivos afectivos (ahorita, momentico, tintico): usalos con MESURA. REGLA ESTRICTA: máximo UNO en cada frase para que el resultado no sea empalagoso.
-        - La partícula 'pues' y muletillas paisas (vea pues, ome, ¿sí o qué?), intercaladas con naturalidad y CON SENTIDO, nunca amontonadas ni en cada frase.
+        RASGOS DE ESTILO (modulalos según la "exageración"):
+        - Voseo: pronominal y VERBAL ('vos' en vez de 'tú', 'vení', 'mirá', 'contá', 'vos sabés', etc.).
+        - Diminutivos afectivos ('ahorita', 'momentico', 'tintico', etc.): usalos con MESURA. REGLA ESTRICTA: máximo UNO en cada frase para que el resultado no sea empalagoso.
+        - La partícula 'pues' y muletillas paisas ('vea pues', 'ome', '¿sí o qué?', etc.), intercaladas con naturalidad y CON SENTIDO, nunca amontonadas ni en cada frase.
         - Podés usar ustedeo donde suene natural (un regaño, un consejo serio, o hablando con cariño familiar).
         - NO usés comas vocativas en expresiones como 'hágale pues mijo', 'todo bien parcero', 'eh Ave María ome': cortan la forma en que un paisa las pronuncia de corrido.
 
@@ -98,10 +98,10 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
         - Conservá el significado y la intención original.
         NO agregués hechos, datos ni detalles que no estaban (si el texto no dice dónde ni con quién, no lo inventés).
         - Mantené el mismo tipo de mensaje: una pregunta sigue siendo pregunta, una orden sigue siendo orden.
-        - Que suene natural y con un toque jocoso cuando la exageración lo permita, NUNCA forzado ni caricaturesco.
+        - Que suene natural y con un toque jocoso cuando la "exageración" lo permita, NUNCA forzado ni caricaturesco.
 
         SOBRE LOS EJEMPLOS:
-        TODOS los ejemplos que veas son SOLO muestras de la exageración y del registro; NO los copiés ni reutilicés sus frases o muletillas.
+        TODOS los ejemplos que veas son SOLO muestras de la "exageración" y del "registro"; NO los copiés ni reutilicés sus frases o muletillas.
         Cada texto es distinto: reescribilo según su propio contenido.
         Son referencia de estilo, no molde a calcar.
 
@@ -109,7 +109,7 @@ def construir_prompt_reescritura(glosario_contexto: str | None = None) -> str:
 
         Devolvé ÚNICAMENTE el texto reescrito: sin la etiqueta, sin comillas, sin explicaciones, sin notas ni encabezados."""
     )
-    return plantilla.replace("{BLOQUE_GLOSARIO}", bloque_glosario)
+    return system_prompt.replace("{BLOQUE_GLOSARIO}", bloque_glosario)
 
 
 def llamar_modelo(
@@ -198,7 +198,7 @@ def traducir_a_espanol(texto: str) -> str:
     Raises:
         TransformacionError: si el LLM falla.
     """
-    plantilla = textwrap.dedent(
+    system_prompt = textwrap.dedent(
         """\
         Recibes un texto transcrito de un audio.
         Puede estar en cualquier idioma.
@@ -206,7 +206,7 @@ def traducir_a_espanol(texto: str) -> str:
         NO agregues ni quites información. Devuelve ÚNICAMENTE el texto en español, sin comillas ni explicaciones."""
     )
 
-    return llamar_modelo(provider.get_client(), plantilla, texto, model=provider.MODEL, temperature=TEMP_TRADUCCION)
+    return llamar_modelo(provider.get_client(), system_prompt, texto, model=provider.MODEL, temperature=TEMP_TRADUCCION)
 
 
 def reescribir_a_paisa(texto: str, exageracion: int = 2, registro: str = "montañero") -> str:
