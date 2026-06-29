@@ -21,7 +21,7 @@ short_description: "Voice pipeline with RAG: STT → Paisa transformation → TT
 ![Faster Whisper](https://img.shields.io/badge/STT-Faster_Whisper-10A37F)
 ![Chatterbox](https://img.shields.io/badge/TTS-Chatterbox_V3-000000)
 
-End-to-end voice pipeline transforming speech audio into Paisa Spanish (Antioquia, Colombia) with a cloned voice.
+End-to-end voice pipeline transforming speech audio into Paisa Spanish (Antioquia, Colombia) with my cloned voice.
 
 <div align="center">
   <figure>
@@ -53,7 +53,7 @@ End-to-end voice pipeline transforming speech audio into Paisa Spanish (Antioqui
 2. **STT (Speech-to-Text):** Automatically detects the language if set to `otro`.
 3. **(Translation):** Handled by an LLM (triggered only if the *Idioma de entrada* dial is `inglés` or `otro`).
 4. **Paisa Rewriting:** An LLM rewrites the text, enriched by **semantic RAG** against a curated glossary (Embeddings + Cosine Similarity). This stage is modulated by the *Exageración* and *Registro* dials.
-5. **TTS (Text-to-Speech):** Synthesizes the text with a cloned voice. The *Exageración* dial influences the model's prosodic variance and acoustic expressiveness.
+5. **TTS (Text-to-Speech):** Synthesizes the text with my cloned voice. The *Exageración* dial influences the model's prosodic variance and acoustic expressiveness.
 6. **Output Voice**
 
 ## Setup & Installation
